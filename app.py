@@ -43,7 +43,7 @@ app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024
 
 # ====== CONFIGURE YOUR KEYS HERE ======
-OPENAI_API_KEY = "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"  # <- put real key
+OPENAI_API_KEY = ""  # <- put real key
 GEMINI_API_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent"
 
 openai_client = None
