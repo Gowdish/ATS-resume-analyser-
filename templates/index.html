@@ -1,0 +1,1279 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI ATS Resume Optimizer & Builder</title>
+
+    <!-- Tailwind -->
+    <script src="https://cdn.tailwindcss.com"></script>
+
+    <!-- Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;500;700;900&family=Inter:wght@400;600;700;800&display=swap" rel="stylesheet">
+
+    <style>
+        /* ===== 1. Base + Cinematic Intro Settings ===== */
+        body {
+            margin: 0;
+            padding: 0;
+            font-family: 'Outfit', sans-serif; /* Intro font */
+            background-color: #000; /* Start black for intro */
+            transition: background-color 1s ease; /* Smooth fade to app color */
+            overflow: hidden;
+        }
+
+        /* When app is active, switch bg + font + scrolling */
+        body.app-active {
+            background-color: #f3f4f6; /* Final app background */
+            overflow: auto;
+            font-family: 'Inter', sans-serif; /* App font */
+        }
+
+        /* 2. The Intro Layer (Overlay) */
+        #intro-layer {
+            position: fixed;
+            inset: 0;
+            z-index: 9999;
+            background: black;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            color: white;
+            transition: opacity 1s ease; /* Smooth fade out */
+        }
+
+        /* 3. Cinematic Text Styling */
+        .cinematic-text {
+            font-size: 3rem;
+            font-weight: 900;
+            text-align: center;
+            opacity: 0;
+            position: absolute;
+            width: 100%;
+            padding: 0 20px;
+
+            /* Gradient Text Effect */
+            background: linear-gradient(to right, #fff, #a5b4fc, #fff);
+            -webkit-background-clip: text;
+            background-clip: text;
+            color: transparent;
+
+            /* Glow Effect */
+            filter: drop-shadow(0 0 20px rgba(99, 102, 241, 0.5));
+        }
+
+        /* 4. Keyframe Animations for Intro */
+
+        @keyframes fadeZoom {
+            0% { opacity: 0; transform: scale(0.8); letter-spacing: 0px; }
+            20% { opacity: 1; transform: scale(1); letter-spacing: 2px; }
+            80% { opacity: 1; transform: scale(1.1); letter-spacing: 4px; filter: blur(0px); }
+            100% { opacity: 0; transform: scale(1.2); letter-spacing: 8px; filter: blur(10px); }
+        }
+
+        .seq-1 {
+            animation: fadeZoom 2.5s ease-in-out forwards;
+        }
+
+        .seq-2 {
+            animation: fadeZoom 2.5s ease-in-out forwards;
+            animation-delay: 2.5s;
+        }
+
+        /* 5. Loading Bar Styles */
+        #intro-loader-bar {
+            position: absolute;
+            bottom: 20%;
+            width: 200px;
+            height: 4px;
+            background: #333;
+            border-radius: 2px;
+            overflow: hidden;
+            opacity: 0;
+            animation: fadeInOut 5.5s ease forwards;
+        }
+
+        #intro-progress {
+            height: 100%;
+            background: linear-gradient(90deg, #6366f1, #ec4899);
+            width: 0%;
+            animation: loadProgress 6s linear forwards;
+        }
+
+        @keyframes loadProgress {
+            0% { width: 0%; }
+            100% { width: 100%; }
+        }
+
+        @keyframes fadeInOut {
+            0% { opacity: 0; }
+            10% { opacity: 1; }
+            90% { opacity: 1; }
+            100% { opacity: 0; }
+        }
+
+        /* 6. Main App Container (initially hidden) */
+        #main-app {
+            opacity: 0;
+            display: none;
+            transition: opacity 1.5s ease;
+        }
+
+        /* ===== App-specific Styles (from your second code) ===== */
+        .step-card {
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1),
+                        0 4px 6px -2px rgba(0, 0, 0, 0.05);
+            border: 1px solid #e5e7eb;
+            transition: all 0.3s ease;
+        }
+        .score-display {
+            font-size: 3.5rem;
+            line-height: 1;
+        }
+        .score-ring {
+            stroke-dasharray: 283;
+            stroke-dashoffset: 283;
+            transition: stroke-dashoffset 1.5s cubic-bezier(0.25, 1, 0.5, 1);
+        }
+        .btn-primary {
+            background: linear-gradient(90deg, #6366f1, #ec4899);
+            color: white;
+            padding: 0.75rem 1.5rem;
+            border-radius: 9999px;
+            font-weight: 600;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+        .btn-primary:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 15px 25px -10px rgba(79,70,229,0.6);
+        }
+        .tab-button.active {
+            border-color: #4f46e5;
+            background: linear-gradient(90deg, #eef2ff, #fee2e2);
+            color: #4f46e5;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+            border-radius: 0.5rem 0.5rem 0 0;
+        }
+        .feedback-item {
+            opacity: 0;
+            transform: translateX(-10px);
+            animation: fadeIn 0.5s ease-out forwards;
+        }
+        @keyframes fadeIn {
+            to {
+                opacity: 1;
+                transform: translateX(0);
+            }
+        }
+        .card {
+            box-shadow: 0 6px 18px rgba(15,23,42,0.08)
+        }
+        .template-card-active {
+            border-color: #4f46e5;
+            background-color: #eef2ff;
+            box-shadow: 0 8px 18px rgba(79,70,229,0.18);
+        }
+    </style>
+</head>
+<body class="p-4 md:p-10">
+
+    <!-- ========== CINEMATIC INTRO LAYER ========== -->
+    <div id="intro-layer">
+        <!-- Text 1 -->
+        <div id="text-1" class="cinematic-text">Made by Gowdish S Final year </div>
+
+        <!-- Text 2 -->
+        <div id="text-2" class="cinematic-text">AI Powered Resume Analyzer</div>
+
+        <!-- Loading Bar -->
+        <div id="intro-loader-bar">
+            <div id="intro-progress"></div>
+        </div>
+    </div>
+
+    <!-- ========== MAIN APP CONTENT (hidden until intro finishes) ========== -->
+    <div id="main-app">
+        <div class="max-w-6xl mx-auto">
+            <!-- Header -->
+            <header class="bg-white rounded-xl shadow-lg p-6 mb-8 border-t-4 border-indigo-600">
+                <h1 class="text-4xl font-extrabold text-gray-900">🚀 ATS Resume Optimizer & Builder</h1>
+                <p class="text-gray-500 mt-2">
+                    Upload or manually enter your details, analyze the <strong>ATS score</strong>, preview your resume in colourful templates,
+                    and download PDF / LaTeX / Markdown outputs.
+                </p>
+            </header>
+
+            <!-- Status / error messages -->
+            <div id="status-message" class="hidden p-4 mb-6 rounded-xl text-white font-medium transition-all duration-300 shadow-md"></div>
+
+            <!-- STEP 1: Input (Upload + Manual) -->
+            <div id="step-1" class="step-card bg-white p-8 rounded-xl mb-10">
+                <h2 class="text-2xl font-bold text-indigo-700 mb-6 flex items-center">
+                    <span class="mr-3 p-2 bg-indigo-100 rounded-full text-indigo-600 font-extrabold">1</span>
+                    Input Resume Data
+                </h2>
+
+                <!-- Input Tabs -->
+                <div class="flex border-b border-gray-200 mb-6">
+                    <button type="button" id="tab-upload-btn"
+                            class="tab-button active px-4 py-2 text-sm font-medium border-b-2 border-transparent focus:outline-none transition duration-150 mr-2">
+                        Option 1: Upload Existing Resume
+                    </button>
+                    <button type="button" id="tab-manual-btn"
+                            class="tab-button px-4 py-2 text-sm font-medium border-b-2 border-transparent text-gray-500 hover:text-indigo-500 focus:outline-none transition duration-150">
+                        Option 2: Enter & Preview Manually
+                    </button>
+                </div>
+
+                <!-- Upload Mode -->
+                <form id="main-form" class="space-y-6">
+                    <div id="tab-upload" class="tab-content space-y-6">
+                        <div class="flex flex-col">
+                            <label for="resume-file" class="font-medium text-gray-700 mb-2">Upload Resume (PDF, DOCX, TXT):</label>
+                            <input type="file" id="resume-file" name="file" accept=".pdf, .docx, .txt"
+                                   class="border border-gray-300 rounded-lg p-3 focus:ring-indigo-500 focus:border-indigo-500 transition duration-150 bg-white">
+                        </div>
+                    </div>
+
+                    <!-- Manual Mode + Preview -->
+                    <div id="tab-manual" class="tab-content hidden space-y-6">
+                        <!-- Basic Info -->
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div class="flex flex-col">
+                                <label for="manual-name" class="font-medium text-gray-700 mb-1">Full Name:</label>
+                                <input type="text" id="manual-name" name="name" placeholder="Gowdish S"
+                                       class="border border-gray-300 rounded-lg p-3 focus:ring-indigo-500 focus:border-indigo-500">
+                            </div>
+                            <div class="flex flex-col">
+                                <label for="manual-email" class="font-medium text-gray-700 mb-1">Email:</label>
+                                <input type="email" id="manual-email" name="email" placeholder="you@example.com"
+                                       class="border border-gray-300 rounded-lg p-3 focus:ring-indigo-500 focus:border-indigo-500">
+                            </div>
+                            <div class="flex flex-col">
+                                <label for="manual-phone" class="font-medium text-gray-700 mb-1">Phone:</label>
+                                <input type="tel" id="manual-phone" name="phone" placeholder="+91 98xxxxxxx"
+                                       class="border border-gray-300 rounded-lg p-3 focus:ring-indigo-500 focus:border-indigo-500">
+                            </div>
+                            <div class="flex flex-col">
+                                <label for="manual-linkedin" class="font-medium text-gray-700 mb-1">LinkedIn / GitHub:</label>
+                                <input type="url" id="manual-linkedin" name="linkedin"
+                                       placeholder="https://linkedin.com/in/... , https://github.com/..."
+                                       class="border border-gray-300 rounded-lg p-3 focus:ring-indigo-500 focus:border-indigo-500">
+                            </div>
+                        </div>
+
+                        <!-- Profile Summary -->
+                        <div class="flex flex-col">
+                            <label for="manual-summary" class="font-medium text-gray-700 mb-2">Profile Summary</label>
+                            <textarea id="manual-summary" rows="3"
+                                placeholder="Enter a short 3–4 line introduction about your experience, expertise and career goals..."
+                                class="border border-gray-300 rounded-lg p-3 focus:ring-indigo-500 focus:border-indigo-500 resize-y"></textarea>
+                        </div>
+
+                        <!-- Experience / Education / Skills -->
+                        <div class="flex flex-col">
+                            <label for="manual-experience" class="font-medium text-gray-700 mb-2">Work Experience (one per line or JSON):</label>
+                            <textarea id="manual-experience" name="experience" rows="4"
+                                      placeholder="Job Title @ Company — Dates — bullets"
+                                      class="border border-gray-300 rounded-lg p-3 focus:ring-indigo-500 focus:border-indigo-500 resize-y"></textarea>
+                        </div>
+
+                        <div class="flex flex-col">
+                            <label for="manual-education" class="font-medium text-gray-700 mb-2">Education (one per line):</label>
+                            <textarea id="manual-education" name="education" rows="3"
+                                      placeholder="B.Tech IT — College — CGPA 8.4"
+                                      class="border border-gray-300 rounded-lg p-3 focus:ring-indigo-500 focus:border-indigo-500 resize-y"></textarea>
+                        </div>
+
+                        <div class="flex flex-col">
+                            <label for="manual-skills" class="font-medium text-gray-700 mb-2">Skills & Tools (comma separated):</label>
+                            <textarea id="manual-skills" name="skills" rows="2"
+                                      placeholder="Python, Flask, AWS, Kali, Burp Suite"
+                                      class="border border-gray-300 rounded-lg p-3 focus:ring-indigo-500 focus:border-indigo-500 resize-y"></textarea>
+                        </div>
+
+                        <!-- Achievements / Projects / Certifications -->
+                        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                            <div class="flex flex-col">
+                                <label for="manual-achievements" class="font-medium text-gray-700 mb-2">Achievements</label>
+                                <textarea id="manual-achievements" rows="3"
+                                          placeholder="Won 1st place in hackathon, Published IEEE paper..."
+                                          class="border border-gray-300 rounded-lg p-3 focus:ring-indigo-500 focus:border-indigo-500 resize-y"></textarea>
+                            </div>
+                            <div class="flex flex-col">
+                                <label for="manual-projects" class="font-medium text-gray-700 mb-2">Projects</label>
+                                <textarea id="manual-projects" rows="3"
+                                          placeholder="Farmer Guidance App — stack, key outcome..."
+                                          class="border border-gray-300 rounded-lg p-3 focus:ring-indigo-500 focus:border-indigo-500 resize-y"></textarea>
+                            </div>
+                            <div class="flex flex-col">
+                                <label for="manual-certifications" class="font-medium text-gray-700 mb-2">Certifications</label>
+                                <textarea id="manual-certifications" rows="3"
+                                          placeholder="AWS Cloud Practitioner, NPTEL IoT..."
+                                          class="border border-gray-300 rounded-lg p-3 focus:ring-indigo-500 focus:border-indigo-500 resize-y"></textarea>
+                            </div>
+                        </div>
+
+                        <!-- Manual Preview & Template Selection -->
+                        <div class="mt-6">
+                            <h3 class="text-xl font-semibold text-indigo-700 mb-3">Manual Preview & Template Selection</h3>
+                            <div class="grid md:grid-cols-2 gap-6">
+                                <!-- Controls -->
+                                <div class="bg-white p-4 rounded-xl card">
+                                    <h4 class="font-semibold mb-3 text-gray-800">Preview Controls</h4>
+
+                                    <!-- Template cards -->
+                                    <div class="flex flex-col space-y-3 mb-3">
+                                        <p class="text-sm font-medium text-gray-700">Choose Template:</p>
+                                        <div id="template-card-container" class="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                                            <button type="button"
+                                                    class="template-card border rounded-lg p-3 text-left text-xs hover:border-indigo-400 hover:bg-indigo-50 transition"
+                                                    data-template="Modern ATS (Basic)">
+                                                <div class="font-semibold text-gray-800 mb-1">Modern ATS</div>
+                                                <p class="text-[11px] text-gray-600">Clean single-column, classic sections.</p>
+                                            </button>
+                                            <button type="button"
+                                                    class="template-card border rounded-lg p-3 text-left text-xs hover:border-indigo-400 hover:bg-indigo-50 transition"
+                                                    data-template="Professional AutoCV">
+                                                <div class="font-semibold text-gray-800 mb-1">Professional AutoCV</div>
+                                                <p class="text-[11px] text-gray-600">Professional headings and spacing.</p>
+                                            </button>
+                                            <button type="button"
+                                                    class="template-card border rounded-lg p-3 text-left text-xs hover:border-indigo-400 hover:bg-indigo-50 transition"
+                                                    data-template="Minimal Clean">
+                                                <div class="font-semibold text-gray-800 mb-1">Minimal Clean</div>
+                                                <p class="text-[11px] text-gray-600">Very minimal, ATS-safe layout.</p>
+                                            </button>
+                                        </div>
+
+                                        <!-- Hidden select -->
+                                        <select id="m-template" class="hidden">
+                                            <option selected>Modern ATS (Basic)</option>
+                                            <option>Professional AutoCV</option>
+                                            <option>Minimal Clean</option>
+                                        </select>
+                                    </div>
+
+                                    <div class="flex flex-col space-y-3">
+                                        <button id="preview-btn" type="button"
+                                                class="px-4 py-2 bg-indigo-600 text-white rounded-md font-semibold">
+                                            Render Preview (Template)
+                                        </button>
+                                        <button id="analyze-btn" type="button"
+                                                class="px-4 py-2 bg-green-600 text-white rounded-md font-semibold">
+                                            Analyze (ATS) from Manual Data
+                                        </button>
+                                    </div>
+
+                                    <div class="mt-4 text-xs text-gray-500 border-t pt-3">
+                                        Preview & ATS use only the manual data above + job description below.
+                                    </div>
+                                </div>
+
+                                <!-- Preview + downloads -->
+                                <div class="space-y-4">
+                                    <div id="resume-preview-card" class="bg-white p-4 rounded-xl card min-h-[260px]">
+                                        <div class="flex justify-between items-start mb-3">
+                                            <h5 class="text-base font-semibold text-gray-700">Resume Preview</h5>
+                                            <div class="text-xs text-gray-500">
+                                                Template: <span id="preview-template-name" class="font-medium">Modern ATS (Basic)</span>
+                                            </div>
+                                        </div>
+                                        <div id="resume-preview"
+                                             class="w-full border rounded-md p-4 bg-gray-50 overflow-auto"
+                                             style="max-height:320px">
+                                            <div id="preview-empty" class="text-center text-gray-400">
+                                                Preview will appear here after you click <strong>Render Preview</strong>.
+                                            </div>
+                                        </div>
+                                        <div class="mt-3 flex gap-2">
+                                            <button id="download-pdf" type="button"
+                                                    class="px-3 py-1.5 bg-indigo-600 text-white rounded-md text-sm">
+                                                Generate PDF
+                                            </button>
+                                            <button id="download-tex" type="button"
+                                                    class="px-3 py-1.5 border rounded-md text-sm">
+                                                Download .tex
+                                            </button>
+                                            <button id="download-md" type="button"
+                                                    class="px-3 py-1.5 bg-orange-500 text-white rounded-md text-sm ml-auto">
+                                                Download .md
+                                            </button>
+                                        </div>
+                                    </div>
+
+                                    <!-- Mini ATS card -->
+                                    <div id="ats-result-card" class="bg-white p-4 rounded-xl card hidden">
+                                        <h5 class="text-base font-semibold text-gray-700 mb-2">ATS Score (Manual Preview)</h5>
+                                        <div class="grid grid-cols-3 gap-3 text-center text-sm">
+                                            <div class="border rounded p-2">
+                                                <div class="text-xs text-gray-500">Initial</div>
+                                                <div id="ats-initial-score" class="text-xl font-bold text-yellow-600">-</div>
+                                            </div>
+                                            <div class="border rounded p-2">
+                                                <div class="text-xs text-gray-500">Final</div>
+                                                <div id="ats-final-score" class="text-xl font-bold text-green-600">-</div>
+                                            </div>
+                                            <div class="border rounded p-2 text-left text-xs">
+                                                <div class="text-gray-500 mb-1">Verbs & Numbers</div>
+                                                <div id="ats-verbs" class="text-gray-700"></div>
+                                            </div>
+                                        </div>
+                                        <div class="mt-3">
+                                            <h6 class="font-semibold text-xs text-gray-700">Feedback</h6>
+                                            <ul id="ats-feedback" class="list-disc ml-4 text-xs text-gray-700"></ul>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Job description + Skip AI -->
+                    <div class="flex flex-col mt-6">
+                        <label for="job-description" class="font-medium text-gray-700 mb-2">
+                            Target Job Description (for keyword matching):
+                        </label>
+                        <textarea id="job-description" name="job_description" rows="5"
+                                  placeholder="Backend Engineer — Python, Flask, AWS, Docker..."
+                                  class="border border-gray-300 rounded-lg p-4 focus:ring-indigo-500 focus:border-indigo-500 transition duration-150 resize-y"></textarea>
+                    </div>
+
+                    <div class="flex items-center mt-4">
+                        <input type="checkbox" id="skip-ai" name="skip_ai"
+                               class="h-5 w-5 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500">
+                        <label for="skip-ai" class="ml-3 text-base text-gray-700 font-medium">
+                            Skip AI Enhancement (only compute initial ATS score)
+                        </label>
+                    </div>
+
+                    <button type="submit" id="submit-button"
+                            class="mt-6 w-full btn-primary disabled:opacity-50 flex items-center justify-center shadow-lg hover:shadow-xl">
+                        <svg id="loading-spinner" class="animate-spin -ml-1 mr-3 h-5 w-5 text-white hidden"
+                             xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                            <circle class="opacity-25" cx="12" cy="12" r="10"
+                                    stroke="currentColor" stroke-width="4"></circle>
+                            <path class="opacity-75" fill="currentColor"
+                                  d="M4 12a8 8 0 018-8V0C5.373
+                                   0 0 5.373 0 12h4zm2 5.291A7.962
+                                   7.962 0 014 12H0c0 3.042 1.135
+                                   5.824 3 7.938l3-2.647z"></path>
+                        </svg>
+                        Start Analysis (Upload) / Re-run ATS (Manual)
+                    </button>
+                </form>
+            </div>
+
+            <!-- STEP 2 & 3: ATS Full Cards -->
+            <div id="results-section" class="hidden">
+                <h2 class="text-2xl font-bold text-gray-800 mb-6 flex items-center">
+                    <span class="mr-3 p-2 bg-gray-200 rounded-full text-gray-700 font-extrabold">2 & 3</span>
+                    ATS Score Analysis & AI Enhancement
+                </h2>
+
+                <div class="grid grid-cols-1 lg:grid-cols-3 gap-8 mb-10">
+                    <!-- Initial Score Card -->
+                    <div id="initial-score-card" class="step-card bg-white p-6 rounded-xl border-l-8 border-yellow-500">
+                        <h3 class="text-xl font-extrabold mb-4 text-yellow-700">Initial Score</h3>
+                        <div class="flex flex-col items-center">
+                            <svg class="w-28 h-28 mb-3" viewBox="0 0 100 100">
+                                <circle cx="50" cy="50" r="45" fill="none" stroke="#fef08a" stroke-width="10"></circle>
+                                <circle id="initial-score-ring" class="score-ring" cx="50" cy="50" r="45"
+                                        fill="none" stroke="#f59e0b" stroke-width="10"
+                                        transform="rotate(-90 50 50)"></circle>
+                                <text id="initial-score-text" class="score-display font-black"
+                                      x="50" y="55" text-anchor="middle" fill="#f59e0b">0</text>
+                            </svg>
+                            <ul id="initial-feedback" class="text-sm text-gray-600 list-disc list-inside space-y-1 mt-3 w-full"></ul>
+                        </div>
+                    </div>
+
+                    <!-- Final Score Card -->
+                    <div id="final-score-card" class="step-card bg-white p-6 rounded-xl lg:col-span-2 border-l-8 border-green-500">
+                        <h3 class="text-xl font-extrabold mb-4 text-green-700">AI Optimized Final Score</h3>
+                        <div class="flex items-start space-x-6">
+                            <svg class="w-28 h-28 flex-shrink-0" viewBox="0 0 100 100">
+                                <circle cx="50" cy="50" r="45" fill="none" stroke="#dcfce7" stroke-width="10"></circle>
+                                <circle id="final-score-ring" class="score-ring" cx="50" cy="50" r="45"
+                                        fill="none" stroke="#10b981" stroke-width="10"
+                                        transform="rotate(-90 50 50)"></circle>
+                                <text id="final-score-text" class="score-display font-black"
+                                      x="50" y="55" text-anchor="middle" fill="#10b981">0</text>
+                            </svg>
+                            <div class="flex-1 space-y-3">
+                                <p class="text-base font-semibold text-gray-800" id="final-message"></p>
+                                <ul id="final-feedback" class="text-sm text-gray-600 list-disc list-inside space-y-1"></ul>
+                            </div>
+                        </div>
+
+                        <!-- Detailed LLM suggestions -->
+                        <div class="mt-4">
+                            <h4 class="text-sm font-semibold text-gray-800">Recommended Changes to Improve ATS</h4>
+                            <ul id="improvement-notes" class="text-sm text-gray-600 list-disc list-inside space-y-1 mt-1"></ul>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- STEP 4 & 5: LaTeX / Markdown Builder -->
+                <div id="step-4" class="step-card bg-white p-8 rounded-xl border-t-4 border-indigo-600 mb-10">
+                    <h2 class="text-2xl font-bold text-indigo-700 mb-5 flex items-center">
+                        <span class="mr-3 p-2 bg-indigo-200 rounded-full text-indigo-700 font-extrabold">4 & 5</span>
+                        Online Resume Builder & Download
+                    </h2>
+
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
+                        <!-- LaTeX preview -->
+                        <div class="order-2 md:order-1 step-card bg-gray-100 p-4 rounded-xl border border-indigo-300">
+                            <h3 class="text-lg font-bold text-indigo-600 mb-3 border-b pb-2">
+                                Live LaTeX Source Preview
+                            </h3>
+                            <pre id="latex-preview"
+                                 class="bg-white p-3 rounded text-xs font-mono overflow-auto max-h-96 border border-gray-200 shadow-inner">
+Awaiting optimized data...
+                            </pre>
+                            <p class="text-xs text-gray-500 mt-3">
+                                This LaTeX code is generated from the optimized data. Use Overleaf if you want a heavily formatted CV.
+                            </p>
+                            <button id="copy-latex-button"
+                                    class="mt-3 w-full bg-gray-800 hover:bg-gray-700 text-white font-bold py-2.5 rounded-lg transition duration-300 flex items-center justify-center text-sm disabled:opacity-50">
+                                Copy LaTeX Code to Clipboard
+                            </button>
+                        </div>
+
+                        <!-- Template selection + downloads -->
+                        <div class="order-1 md:order-2 space-y-6">
+                            <div id="template-selector-container" class="flex flex-col space-y-3 p-4 bg-indigo-100 rounded-lg">
+                                <label for="template-select" class="font-medium text-indigo-800 mb-1 block text-lg">
+                                    Choose Resume Template (for LaTeX / Markdown):
+                                </label>
+                                <select id="template-select" name="template_name"
+                                        class="w-full border border-indigo-400 rounded-lg p-3 focus:ring-indigo-500 focus:border-indigo-500 shadow-md">
+                                    <option value="Modern ATS (Basic)">Modern ATS (Basic)</option>
+                                    <option value="Professional AutoCV">Professional AutoCV</option>
+                                </select>
+                            </div>
+
+                            <div class="space-y-4">
+                                <p class="text-base font-semibold text-gray-700 border-b pb-2">
+                                    Download Optimized Sources:
+                                </p>
+
+                                <form id="download-latex-form">
+                                    <button type="submit" id="download-latex-button"
+                                            class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 rounded-lg transition duration-300 flex items-center justify-center shadow-md disabled:opacity-50">
+                                        <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor"
+                                             viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                                  d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path>
+                                        </svg>
+                                        Download (.tex) Source for PDF
+                                    </button>
+                                    <p id="latex-guide" class="text-xs text-gray-500 mt-1">
+                                        Open this `.tex` file in Overleaf to generate a beautifully formatted PDF.
+                                    </p>
+                                </form>
+
+                                <form id="download-markdown-form">
+                                    <button type="submit" id="download-markdown-button"
+                                            class="w-full bg-orange-500 hover:bg-orange-600 text-white font-bold py-3 rounded-lg transition duration-300 flex items-center justify-center text-sm shadow-md disabled:opacity-50">
+                                        <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor"
+                                             viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                                  d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path>
+                                        </svg>
+                                        Download Editable (.md) Source
+                                    </button>
+                                    <p id="markdown-guide" class="text-xs text-gray-500 mt-1">
+                                        Convert this Markdown to DOCX using online tools like Pandoc if required.
+                                    </p>
+                                </form>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Debug JSON (hidden) -->
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-8 mb-10 hidden">
+                        <div class="step-card bg-white p-6 rounded-xl border border-gray-300">
+                            <h3 class="text-lg font-bold mb-3 text-gray-700 border-b pb-2">Parsed Resume Data (JSON)</h3>
+                            <pre id="initial-data" class="bg-gray-50 p-4 rounded text-xs font-mono overflow-auto max-h-64"></pre>
+                        </div>
+                        <div class="step-card bg-white p-6 rounded-xl border border-gray-300">
+                            <h3 class="text-lg font-bold mb-3 text-green-700 border-b pb-2">AI-Optimized Data (JSON)</h3>
+                            <pre id="enhanced-data" class="bg-green-50 p-4 rounded text-xs font-mono overflow-auto max-h-64"></pre>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ========== Cinematic Intro Script ========== -->
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const introLayer = document.getElementById('intro-layer');
+            const mainApp = document.getElementById('main-app');
+            const text1 = document.getElementById('text-1');
+            const text2 = document.getElementById('text-2');
+            const body = document.body;
+
+            // Trigger first text
+            setTimeout(() => {
+                text1.classList.add('seq-1');
+            }, 100);
+
+            // Trigger second text
+            setTimeout(() => {
+                text2.classList.add('seq-2');
+            }, 2600);
+
+            // End sequence & reveal app
+            setTimeout(() => {
+                introLayer.style.opacity = '0';
+                introLayer.style.pointerEvents = 'none';
+                body.classList.add('app-active');
+
+                // Show main app
+                mainApp.style.display = 'block';
+                requestAnimationFrame(() => {
+                    mainApp.style.opacity = '1';
+                });
+
+                // Remove intro from DOM later
+                setTimeout(() => introLayer.remove(), 1000);
+            }, 6000);
+        });
+    </script>
+
+    <!-- ========== Main App Logic Script (unchanged from your code) ========== -->
+    <script>
+    document.addEventListener('DOMContentLoaded', () => {
+        const mainForm = document.getElementById('main-form');
+        const statusMessage = document.getElementById('status-message');
+        const resultsSection = document.getElementById('results-section');
+        const submitButton = document.getElementById('submit-button');
+        const loadingSpinner = document.getElementById('loading-spinner');
+        const copyLatexButton = document.getElementById('copy-latex-button');
+        const templateSelect = document.getElementById('template-select'); // LaTeX/Markdown template
+        const manualTemplateSelect = document.getElementById('m-template'); // Manual preview template
+        const previewTemplateNameSpan = document.getElementById('preview-template-name');
+        const templateCards = document.querySelectorAll('.template-card');
+
+        const tabUploadBtn = document.getElementById('tab-upload-btn');
+        const tabManualBtn = document.getElementById('tab-manual-btn');
+        const tabUpload = document.getElementById('tab-upload');
+        const tabManual = document.getElementById('tab-manual');
+        const resumeFile = document.getElementById('resume-file');
+
+        const downloadLatexForm = document.getElementById('download-latex-form');
+        const downloadMarkdownForm = document.getElementById('download-markdown-form');
+        const downloadLatexButton = document.getElementById('download-latex-button');
+        const downloadMarkdownButton = document.getElementById('download-markdown-button');
+
+        let finalStructuredData = null;
+        let finalLatexSource = '';
+        let currentInputMode = 'upload';
+
+        // --- Tab switching ---
+        function switchTab(mode) {
+            currentInputMode = mode;
+            if (mode === 'upload') {
+                tabUploadBtn.classList.add('active');
+                tabManualBtn.classList.remove('active');
+                tabUpload.classList.remove('hidden');
+                tabManual.classList.add('hidden');
+            } else {
+                tabManualBtn.classList.add('active');
+                tabUploadBtn.classList.remove('active');
+                tabManual.classList.remove('hidden');
+                tabUpload.classList.add('hidden');
+            }
+        }
+        tabUploadBtn.addEventListener('click', () => switchTab('upload'));
+        tabManualBtn.addEventListener('click', () => switchTab('manual'));
+        switchTab('upload');
+
+        // --- Status display ---
+        function showStatus(message, type = 'success') {
+            statusMessage.textContent = message;
+            statusMessage.className = 'p-4 mb-6 rounded-xl text-white font-medium transition-all duration-300 shadow-md';
+            if (type === 'success') statusMessage.classList.add('bg-green-600');
+            else if (type === 'error') statusMessage.classList.add('bg-red-600');
+            else statusMessage.classList.add('bg-indigo-600');
+            statusMessage.classList.remove('hidden');
+            setTimeout(() => statusMessage.classList.add('hidden'), 9000);
+        }
+
+        // --- Score ring update ---
+        function updateScoreRing(scoreId, textId, score, color, maxScore = 100) {
+            const ring = document.getElementById(scoreId);
+            const text = document.getElementById(textId);
+            const normalizedScore = Math.max(0, Math.min(score || 0, maxScore));
+            const circumference = 283;
+            const offset = circumference - (normalizedScore / maxScore) * circumference;
+            text.textContent = normalizedScore;
+            ring.style.stroke = color;
+            requestAnimationFrame(() => { ring.style.strokeDashoffset = offset; });
+        }
+
+        // --- Helpers for manual parsing ---
+        function parseListOrJson(content) {
+            content = (content || '').trim();
+            if (!content) return [];
+            try {
+                const j = JSON.parse(content);
+                if (Array.isArray(j) || typeof j === 'object') return j;
+            } catch(e){}
+            const lines = content.split(/\r?\n/).map(s=>s.trim()).filter(Boolean);
+            if (lines.length === 1 && lines[0].includes(',')) {
+                return lines[0].split(',').map(s=>s.trim()).filter(Boolean);
+            }
+            return lines;
+        }
+
+        function parseManualTextArea(text) {
+            text = text || '';
+            try {
+                const parsed = JSON.parse(text);
+                if (Array.isArray(parsed)) return parsed;
+            } catch (e) {}
+            if (text.includes(',')) {
+                return text.split(',').map(s=>s.trim()).filter(Boolean);
+            }
+            return text.split('\n').map(s=>s.trim()).filter(Boolean);
+        }
+
+        // --- Build structured object from manual section ---
+        function buildStructuredFromManual() {
+            const name = document.getElementById('manual-name').value.trim();
+            const email = document.getElementById('manual-email').value.trim();
+            const phone = document.getElementById('manual-phone').value.trim();
+            const links = document.getElementById('manual-linkedin').value.trim();
+            const summary = document.getElementById('manual-summary').value.trim();
+            const experience = parseListOrJson(document.getElementById('manual-experience').value);
+            const education = parseListOrJson(document.getElementById('manual-education').value);
+            const skills = parseManualTextArea(document.getElementById('manual-skills').value);
+            const achievements = parseListOrJson(document.getElementById('manual-achievements').value);
+            const projects = parseListOrJson(document.getElementById('manual-projects').value);
+            const certifications = parseListOrJson(document.getElementById('manual-certifications').value);
+            const jd = document.getElementById('job-description').value.trim();
+            const template = manualTemplateSelect.value || 'Modern ATS (Basic)';
+            return {
+                name, email, phone, links, summary,
+                education, experience, skills,
+                achievements, projects, certifications,
+                job_description: jd,
+                template_name: template
+            };
+        }
+
+        // --- Display ATS result cards ---
+        function displayResults(data) {
+            resultsSection.classList.remove('hidden');
+            const initialAts = data.initial_ats || {};
+            const finalAts = data.final_ats || initialAts;
+
+            updateScoreRing('initial-score-ring', 'initial-score-text', initialAts.score, '#f59e0b');
+            document.getElementById('initial-feedback').innerHTML =
+                (initialAts.feedback || []).map((f,i)=>`<li class="feedback-item" style="animation-delay:${i*0.06}s">${f}</li>`).join('');
+
+            document.getElementById('final-message').textContent = data.message || '';
+            updateScoreRing('final-score-ring', 'final-score-text', finalAts.score, '#10b981');
+            document.getElementById('final-feedback').innerHTML =
+                (finalAts.feedback || []).map((f,i)=>`<li class="feedback-item" style="animation-delay:${i*0.06}s">${f}</li>`).join('');
+
+            // LLM-based recommendations from backend
+            const improvementList = document.getElementById('improvement-notes');
+            improvementList.innerHTML = (data.improvement_suggestions || []).map(
+                (f,i) => `<li class="feedback-item" style="animation-delay:${i*0.06}s">${f}</li>`
+            ).join('');
+
+            document.getElementById('initial-data').textContent = JSON.stringify(data.parsed_data || {}, null, 2);
+            document.getElementById('enhanced-data').textContent = JSON.stringify(data.enhanced_data || data.parsed_data || {}, null, 2);
+
+            resultsSection.scrollIntoView({ behavior: 'smooth' });
+        }
+
+        // --- Generate LaTeX preview from finalStructuredData ---
+        async function generateLatexPreview() {
+            if (!finalStructuredData) return;
+            const templateName = templateSelect.value;
+            document.getElementById('latex-preview').textContent = 'Updating template...';
+            try {
+                const response = await fetch('/generate_resume_text', {
+                    method: 'POST',
+                    headers: {'Content-Type':'application/json'},
+                    body: JSON.stringify({
+                        structured_data: finalStructuredData,
+                        template_name: templateName
+                    })
+                });
+                if (!response.ok) throw new Error(await response.text());
+                finalLatexSource = await response.text();
+                document.getElementById('latex-preview').textContent = finalLatexSource;
+                copyLatexButton.disabled = false;
+            } catch (err) {
+                document.getElementById('latex-preview').textContent = 'Error generating LaTeX: ' + err.message;
+                copyLatexButton.disabled = true;
+            }
+        }
+        templateSelect.addEventListener('change', generateLatexPreview);
+
+        // --- Manual template card selection ---
+        function setActiveManualTemplate(tName) {
+            manualTemplateSelect.value = tName;
+            previewTemplateNameSpan.textContent = tName;
+            templateCards.forEach(btn => {
+                if (btn.getAttribute('data-template') === tName) {
+                    btn.classList.add('template-card-active');
+                } else {
+                    btn.classList.remove('template-card-active');
+                }
+            });
+        }
+        templateCards.forEach(btn => {
+            btn.addEventListener('click', () => {
+                const tname = btn.getAttribute('data-template');
+                setActiveManualTemplate(tname);
+            });
+        });
+        setActiveManualTemplate(manualTemplateSelect.value || 'Modern ATS (Basic)');
+
+        // --- Main form submit (upload/manual to /process) ---
+        mainForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            submitButton.disabled = true;
+            loadingSpinner.classList.remove('hidden');
+            showStatus('Processing resume (upload/manual depending on mode)...', 'info');
+            resultsSection.classList.add('hidden');
+
+            const jobDescription = document.getElementById('job-description').value || '';
+            const skipAi = document.getElementById('skip-ai').checked;
+            let response;
+
+            try {
+                if (currentInputMode === 'upload') {
+                    if (!resumeFile.files || !resumeFile.files[0]) {
+                        showStatus('Please select a resume file to upload.', 'error');
+                        submitButton.disabled = false;
+                        loadingSpinner.classList.add('hidden');
+                        return;
+                    }
+                    const formData = new FormData();
+                    formData.append('file', resumeFile.files[0]);
+                    formData.append('job_description', jobDescription);
+                    formData.append('skip_ai', skipAi ? 'true' : 'false');
+                    response = await fetch('/process', { method:'POST', body: formData });
+                } else {
+                    const m = buildStructuredFromManual();
+                    if (!m.name || !m.experience.length || !m.education.length) {
+                        showStatus('For manual mode, please fill Name, Experience, Education.', 'error');
+                        submitButton.disabled = false;
+                        loadingSpinner.classList.add('hidden');
+                        return;
+                    }
+                    response = await fetch('/process', {
+                        method:'POST',
+                        headers:{'Content-Type':'application/json'},
+                        body: JSON.stringify({
+                            job_description: jobDescription,
+                            skip_ai: skipAi,
+                            manual_data: {
+                                name: m.name,
+                                email: m.email,
+                                phone: m.phone,
+                                linkedin: m.links,
+                                summary: m.summary,
+                                education: m.education,
+                                experience: m.experience,
+                                skills: m.skills,
+                                achievements: m.achievements,
+                                projects: m.projects,
+                                certifications: m.certifications
+                            }
+                        })
+                    });
+                }
+
+                const data = await response.json();
+                if (!response.ok) throw new Error(data.error || 'Server error during processing.');
+
+                finalStructuredData = data.enhanced_data || data.parsed_data;
+                showStatus('Analysis complete! Scroll down for ATS charts and optimization summary.', 'success');
+                displayResults(data);
+                await generateLatexPreview();
+            } catch (err) {
+                console.error(err);
+                showStatus('Error: ' + err.message, 'error');
+            } finally {
+                submitButton.disabled = false;
+                loadingSpinner.classList.add('hidden');
+            }
+        });
+
+        function escapeHtml(text) {
+            if (text === null || text === undefined) return '';
+            return String(text)
+                .replace(/&/g,'&amp;').replace(/</g,'&lt;')
+                .replace(/>/g,'&gt;').replace(/"/g,'&quot;')
+                .replace(/'/g,'&#39;');
+        }
+
+        // --- Resume preview layout ---
+        function renderPreviewHtml(data) {
+            const tpl = data.template_name || 'Modern ATS (Basic)';
+            const name = data.name || 'Your Name';
+            const contactLine = [data.email, data.phone, data.links].filter(Boolean).join(' • ');
+            const summary = data.summary || '';
+
+            let accentTitle = 'text-indigo-700';
+            let accentBorder = 'border-indigo-200';
+            if (tpl === 'Professional AutoCV') {
+                accentTitle = 'text-slate-800';
+                accentBorder = 'border-slate-200';
+            } else if (tpl === 'Minimal Clean') {
+                accentTitle = 'text-emerald-700';
+                accentBorder = 'border-emerald-200';
+            }
+
+            function listSection(title, arr) {
+                if (!arr || arr.length === 0) return '';
+                return `
+                    <div class="mt-4">
+                        <h3 class="text-sm font-semibold ${accentTitle} border-b ${accentBorder} pb-1 uppercase tracking-wide">${escapeHtml(title)}</h3>
+                        <ul class="mt-1 list-disc list-inside text-sm text-gray-800 space-y-1">
+                            ${arr.map(item => `<li>${escapeHtml(typeof item === 'string' ? item : JSON.stringify(item))}</li>`).join('')}
+                        </ul>
+                    </div>
+                `;
+            }
+
+            function skillsSection(skills) {
+                if (!skills || skills.length === 0) return '';
+                return `
+                    <div class="mt-4">
+                        <h3 class="text-sm font-semibold ${accentTitle} border-b ${accentBorder} pb-1 uppercase tracking-wide">Technical Skills</h3>
+                        <div class="mt-1 flex flex-wrap gap-1">
+                            ${skills.map(s => `<span class="px-2 py-0.5 text-xs rounded-full border bg-white">${escapeHtml(s)}</span>`).join('')}
+                        </div>
+                    </div>
+                `;
+            }
+
+            return `
+                <div class="font-sans text-gray-900 leading-snug text-sm">
+                    <div class="border-b ${accentBorder} pb-2 mb-2">
+                        <h1 class="text-xl font-bold">${escapeHtml(name)}</h1>
+                        ${contactLine ? `<div class="text-xs text-gray-600 mt-1">${escapeHtml(contactLine)}</div>` : ''}
+                        ${summary ? `<p class="mt-2 text-xs text-gray-700">${escapeHtml(summary)}</p>` : ''}
+                    </div>
+                    ${listSection('Summary', data.summary ? [data.summary] : [])}
+                    ${listSection('Education', data.education)}
+                    ${skillsSection(data.skills)}
+                    ${listSection('Projects', data.projects)}
+                    ${listSection('Achievements', data.achievements)}
+                    ${listSection('Certifications', data.certifications)}
+                    ${listSection('Experience', data.experience)}
+                </div>
+            `;
+        }
+
+        // --- Manual preview button ---
+        document.getElementById('preview-btn').addEventListener('click', () => {
+            const data = buildStructuredFromManual();
+            if (!data.name) {
+                showStatus('Please enter at least your name in manual section before preview.', 'error');
+                return;
+            }
+            const html = renderPreviewHtml(data);
+            document.getElementById('resume-preview').innerHTML = html;
+            previewTemplateNameSpan.textContent = data.template_name || 'Modern ATS (Basic)';
+        });
+
+        // --- Manual ATS analyze button ---
+        document.getElementById('analyze-btn').addEventListener('click', async () => {
+            const payload = buildStructuredFromManual();
+            if (!payload.name || !payload.experience.length || !payload.education.length) {
+                showStatus('Manual ATS: please fill Name, Experience, Education.', 'error');
+                return;
+            }
+            const structured = {
+                name: payload.name,
+                email: payload.email,
+                phone: payload.phone,
+                linkedin: payload.links,
+                summary: payload.summary,
+                education: payload.education,
+                experience: payload.experience,
+                skills: payload.skills,
+                achievements: payload.achievements,
+                projects: payload.projects,
+                certifications: payload.certifications
+            };
+            try {
+                const res = await fetch('/process', {
+                    method:'POST',
+                    headers:{'Content-Type':'application/json'},
+                    body: JSON.stringify({
+                        manual_data: structured,
+                        job_description: payload.job_description,
+                        skip_ai: false
+                    })
+                });
+                const data = await res.json();
+                if (!res.ok) throw new Error(data.error || 'Processing failed.');
+                document.getElementById('ats-result-card').classList.remove('hidden');
+                const initial = data.initial_ats || {};
+                const finalAts = data.final_ats || initial;
+                document.getElementById('ats-initial-score').textContent = initial.score || '-';
+                document.getElementById('ats-final-score').textContent = finalAts.score || '-';
+                document.getElementById('ats-verbs').innerHTML =
+                    (finalAts.found_verbs || []).join(', ') + '<br/>' + (finalAts.found_numbers || []).join(', ');
+                const feedbackList = document.getElementById('ats-feedback');
+                feedbackList.innerHTML = '';
+                (finalAts.feedback || []).forEach(f => {
+                    const li = document.createElement('li');
+                    li.className = 'feedback-item';
+                    li.textContent = f;
+                    feedbackList.appendChild(li);
+                });
+
+                finalStructuredData = data.enhanced_data || data.parsed_data;
+                displayResults(data);
+                await generateLatexPreview();
+
+                if (data.enhanced_data) {
+                    const html = renderPreviewHtml({
+                        name: data.enhanced_data.name,
+                        email: data.enhanced_data.email,
+                        phone: data.enhanced_data.phone,
+                        links: data.enhanced_data.linkedin,
+                        summary: data.enhanced_data.summary || '',
+                        education: data.enhanced_data.education || [],
+                        experience: data.enhanced_data.experience || [],
+                        skills: data.enhanced_data.skills || [],
+                        achievements: data.enhanced_data.achievements || [],
+                        projects: data.enhanced_data.projects || [],
+                        certifications: data.enhanced_data.certifications || [],
+                        template_name: payload.template_name
+                    });
+                    document.getElementById('resume-preview').innerHTML = html;
+                }
+                showStatus('Manual ATS analysis complete (see preview + ATS cards).', 'success');
+            } catch (err) {
+                console.error(err);
+                showStatus('Manual ATS error: ' + err.message, 'error');
+            }
+        });
+
+        // --- Download helpers ---
+        async function fetchBlob(endpoint, body) {
+            const res = await fetch(endpoint, {
+                method:'POST',
+                headers:{'Content-Type':'application/json'},
+                body: JSON.stringify(body)
+            });
+            if (!res.ok) throw new Error(await res.text());
+            return res.blob();
+        }
+
+        // PDF from manual data (uses /generate_resume_pdf)
+        document.getElementById('download-pdf').addEventListener('click', async () => {
+            const manual = buildStructuredFromManual();
+            const structured = {
+                name: manual.name,
+                email: manual.email,
+                phone: manual.phone,
+                linkedin: manual.links,
+                summary: manual.summary,
+                education: manual.education,
+                experience: manual.experience,
+                skills: manual.skills,
+                achievements: manual.achievements,
+                projects: manual.projects,
+                certifications: manual.certifications
+            };
+            try {
+                const blob = await fetchBlob('/generate_resume_pdf', {
+                    structured_data: structured,
+                    template_name: manual.template_name
+                });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = 'resume.pdf';
+                document.body.appendChild(a);
+                a.click();
+                a.remove();
+                URL.revokeObjectURL(url);
+                showStatus('PDF downloaded successfully from manual data.', 'success');
+            } catch (err) {
+                showStatus('Preview PDF download error: ' + err.message, 'error');
+            }
+        });
+
+        document.getElementById('download-tex').addEventListener('click', async () => {
+            const manual = buildStructuredFromManual();
+            const structured = {
+                name: manual.name,
+                email: manual.email,
+                phone: manual.phone,
+                linkedin: manual.links,
+                summary: manual.summary,
+                education: manual.education,
+                experience: manual.experience,
+                skills: manual.skills,
+                achievements: manual.achievements,
+                projects: manual.projects,
+                certifications: manual.certifications
+            };
+            try {
+                const blob = await fetchBlob('/generate_resume', {
+                    structured_data: structured,
+                    template_name: manual.template_name
+                });
+            const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = 'resume.tex';
+                document.body.appendChild(a);
+                a.click();
+                a.remove();
+                URL.revokeObjectURL(url);
+                showStatus('Manual LaTeX (.tex) downloaded.', 'success');
+            } catch (err) {
+                showStatus('Preview tex download error: ' + err.message, 'error');
+            }
+        });
+
+        document.getElementById('download-md').addEventListener('click', async () => {
+            const manual = buildStructuredFromManual();
+            const structured = {
+                name: manual.name,
+                email: manual.email,
+                phone: manual.phone,
+                linkedin: manual.links,
+                summary: manual.summary,
+                education: manual.education,
+                experience: manual.experience,
+                skills: manual.skills,
+                achievements: manual.achievements,
+                projects: manual.projects,
+                certifications: manual.certifications
+            };
+            try {
+                const blob = await fetchBlob('/generate_markdown', {
+                    structured_data: structured
+                });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = 'resume.md';
+                document.body.appendChild(a);
+                a.click();
+                a.remove();
+                URL.revokeObjectURL(url);
+                showStatus('Manual Markdown (.md) downloaded.', 'success');
+            } catch (err) {
+                showStatus('Preview md download error: ' + err.message, 'error');
+            }
+        });
+
+        // --- Optimized LaTeX / Markdown download (bottom section) ---
+        downloadLatexForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            if (!finalStructuredData) {
+                showStatus('Run analysis first before downloading LaTeX.', 'error');
+                return;
+            }
+            const templateName = templateSelect.value;
+            downloadLatexButton.disabled = true;
+            downloadLatexButton.innerHTML =
+                '<svg class="animate-spin -ml-1 mr-3 h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg> Generating...';
+            try {
+                const res = await fetch('/generate_resume', {
+                    method:'POST',
+                    headers:{'Content-Type':'application/json'},
+                    body: JSON.stringify({
+                        structured_data: finalStructuredData,
+                        template_name: templateName
+                    })
+                });
+                if (!res.ok) throw new Error(await res.text());
+                const blob = await res.blob();
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = 'ats_optimized_resume.tex';
+                document.body.appendChild(a);
+                a.click();
+                a.remove();
+                URL.revokeObjectURL(url);
+                showStatus('Optimized LaTeX (.tex) downloaded.', 'success');
+            } catch (err) {
+                showStatus('Download LaTeX error: ' + err.message, 'error');
+            } finally {
+                downloadLatexButton.disabled = false;
+                downloadLatexButton.innerHTML =
+                    '<svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg> Download (.tex) Source for PDF';
+            }
+        });
+
+        downloadMarkdownForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            if (!finalStructuredData) {
+                showStatus('Run analysis first before downloading Markdown.', 'error');
+                return;
+            }
+            downloadMarkdownButton.disabled = true;
+            downloadMarkdownButton.innerHTML =
+                '<svg class="animate-spin -ml-1 mr-3 h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg> Generating...';
+            try {
+                const res = await fetch('/generate_markdown', {
+                    method:'POST',
+                    headers:{'Content-Type':'application/json'},
+                    body: JSON.stringify({ structured_data: finalStructuredData })
+                });
+                if (!res.ok) throw new Error(await res.text());
+                const blob = await res.blob();
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = 'ats_optimized_resume.md';
+                document.body.appendChild(a);
+                a.click();
+                a.remove();
+                URL.revokeObjectURL(url);
+                showStatus('Optimized Markdown (.md) downloaded.', 'success');
+            } catch (err) {
+                showStatus('Download Markdown error: ' + err.message, 'error');
+            } finally {
+                downloadMarkdownButton.disabled = false;
+                downloadMarkdownButton.innerHTML =
+                    '<svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path></svg> Download Editable (.md) Source';
+            }
+        });
+
+        // Copy LaTeX button
+        copyLatexButton.addEventListener('click', () => {
+            if (!finalLatexSource) {
+                showStatus('No LaTeX generated yet.', 'error');
+                return;
+            }
+            const textarea = document.createElement('textarea');
+            textarea.value = finalLatexSource;
+            textarea.style.position = 'fixed';
+            document.body.appendChild(textarea);
+            textarea.focus();
+            textarea.select();
+            try {
+                document.execCommand('copy');
+                showStatus('LaTeX copied to clipboard.', 'success');
+            } catch (err) {
+                showStatus('Copy failed; copy manually from the box.', 'error');
+            }
+            document.body.removeChild(textarea);
+        });
+    });
+    </script>
+</body>
+</html>
