@@ -3,12 +3,19 @@ import json
 import re
 import requests
 import time
+from dotenv import load_dotenv
 from functools import wraps
 from io import BytesIO
 
 from flask import Flask, request, jsonify, render_template, send_file, make_response
 from werkzeug.utils import secure_filename
 
+# Load .env (or `pri.env` if present). This ensures environment keys in the repo are loaded.
+env_path = os.path.join(os.path.dirname(__file__), 'pri.env')
+if os.path.exists(env_path):
+    load_dotenv(env_path)
+else:
+    load_dotenv()  # fallback to default .env lookup
 # --- Local parsing libs ---
 try:
     import docx
@@ -42,11 +49,10 @@ ALLOWED_EXTENSIONS = {'pdf', 'docx', 'txt'}
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024
 
-# Ensure upload folder exists on import (important for Gunicorn workers)
-os.makedirs(UPLOAD_FOLDER, exist_ok=True)
-
 # ====== CONFIGURE YOUR KEYS HERE ======
-OPENAI_API_KEY = ""  # <- put real key
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "").strip()
+# If you keep credentials in `pri.env`, the loader above will read them. Alternatively,
+# set the environment variable in your OS or rename `pri.env` to `.env`.
 
 openai_client = None
 try:
@@ -463,6 +469,7 @@ def build_fallback_suggestions(initial_ats, final_ats):
 
     for key, msg in mapping.items():
         if key in ib and key in fb and fb[key] <= ib[key]:
+            # if didn't improve, still suggest
             notes.append(msg)
 
     if not notes and initial_ats:
@@ -920,3 +927,8 @@ def generate_docx():
         download_name="resume.docx",
         mimetype="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
     )
+
+
+if __name__ == "__main__":
+    os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+    app.run(debug=True, host="0.0.0.0", port=int(os.getenv("PORT", 5000)))
