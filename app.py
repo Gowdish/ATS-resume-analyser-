@@ -42,9 +42,11 @@ ALLOWED_EXTENSIONS = {'pdf', 'docx', 'txt'}
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024
 
+# Ensure upload folder exists on import (important for Gunicorn workers)
+os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+
 # ====== CONFIGURE YOUR KEYS HERE ======
 OPENAI_API_KEY = ""  # <- put real key
-GEMINI_API_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent"
 
 openai_client = None
 try:
@@ -461,7 +463,6 @@ def build_fallback_suggestions(initial_ats, final_ats):
 
     for key, msg in mapping.items():
         if key in ib and key in fb and fb[key] <= ib[key]:
-            # if didn't improve, still suggest
             notes.append(msg)
 
     if not notes and initial_ats:
@@ -919,8 +920,3 @@ def generate_docx():
         download_name="resume.docx",
         mimetype="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
     )
-
-
-if __name__ == "__main__":
-    os.makedirs(UPLOAD_FOLDER, exist_ok=True)
-    app.run(debug=True, host="0.0.0.0", port=int(os.getenv("PORT", 5000)))
