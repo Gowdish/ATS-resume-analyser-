@@ -119,7 +119,7 @@
             transition: opacity 1.5s ease;
         }
 
-        /* ===== App-specific Styles ===== */
+        /* ===== App-specific Styles (from your second code) ===== */
         .step-card {
             box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1),
                         0 4px 6px -2px rgba(0, 0, 0, 0.05);
@@ -180,7 +180,7 @@
     <!-- ========== CINEMATIC INTRO LAYER ========== -->
     <div id="intro-layer">
         <!-- Text 1 -->
-        <div id="text-1" class="cinematic-text">Made by Gowdish S Final year</div>
+        <div id="text-1" class="cinematic-text">Made by Gowdish S Final year </div>
 
         <!-- Text 2 -->
         <div id="text-2" class="cinematic-text">AI Powered Resume Analyzer</div>
@@ -644,7 +644,7 @@ Awaiting optimized data...
         });
     </script>
 
-    <!-- ========== Main App Logic Script ========== -->
+    <!-- ========== Main App Logic Script (unchanged from your code) ========== -->
     <script>
     document.addEventListener('DOMContentLoaded', () => {
         const mainForm = document.getElementById('main-form');
@@ -672,17 +672,6 @@ Awaiting optimized data...
         let finalStructuredData = null;
         let finalLatexSource = '';
         let currentInputMode = 'upload';
-
-        // ---- SAFE JSON HELPER (prevents "Unexpected token '<'" crash) ----
-        async function safeJson(response) {
-            const text = await response.text();
-            try {
-                return JSON.parse(text);
-            } catch (e) {
-                console.error("Non-JSON response from server:", text);
-                throw new Error("Server returned an HTML/error page instead of JSON. Check backend logs or Network → Response.");
-            }
-        }
 
         // --- Tab switching ---
         function switchTab(mode) {
@@ -905,7 +894,7 @@ Awaiting optimized data...
                     });
                 }
 
-                const data = await safeJson(response);
+                const data = await response.json();
                 if (!response.ok) throw new Error(data.error || 'Server error during processing.');
 
                 finalStructuredData = data.enhanced_data || data.parsed_data;
@@ -1030,14 +1019,15 @@ Awaiting optimized data...
                         skip_ai: false
                     })
                 });
-                const data = await safeJson(res);
+                const data = await res.json();
                 if (!res.ok) throw new Error(data.error || 'Processing failed.');
                 document.getElementById('ats-result-card').classList.remove('hidden');
                 const initial = data.initial_ats || {};
                 const finalAts = data.final_ats || initial;
                 document.getElementById('ats-initial-score').textContent = initial.score || '-';
                 document.getElementById('ats-final-score').textContent = finalAts.score || '-';
-                document.getElementById('ats-verbs').innerHTML = ''; // your backend doesn't send verbs/numbers yet
+                document.getElementById('ats-verbs').innerHTML =
+                    (finalAts.found_verbs || []).join(', ') + '<br/>' + (finalAts.found_numbers || []).join(', ');
                 const feedbackList = document.getElementById('ats-feedback');
                 feedbackList.innerHTML = '';
                 (finalAts.feedback || []).forEach(f => {
@@ -1141,7 +1131,7 @@ Awaiting optimized data...
                     structured_data: structured,
                     template_name: manual.template_name
                 });
-                const url = URL.createObjectURL(blob);
+            const url = URL.createObjectURL(blob);
                 const a = document.createElement('a');
                 a.href = url;
                 a.download = 'resume.tex';
