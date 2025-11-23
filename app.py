@@ -3,12 +3,11 @@ import json
 import re
 import requests
 import time
-import traceback
 from dotenv import load_dotenv
 from functools import wraps
 from io import BytesIO
 
-from flask import Flask, request, jsonify, render_template, send_file, make_response, Response
+from flask import Flask, request, jsonify, render_template, send_file, make_response
 from werkzeug.utils import secure_filename
 
 # Load .env (or `pri.env` if present). This ensures environment keys in the repo are loaded.
@@ -17,7 +16,6 @@ if os.path.exists(env_path):
     load_dotenv(env_path)
 else:
     load_dotenv()  # fallback to default .env lookup
-
 # --- Local parsing libs ---
 try:
     import docx
@@ -35,8 +33,6 @@ try:
     from reportlab.lib.pagesizes import A4
 except ImportError:
     print("WARNING: install reportlab: pip install reportlab")
-    canvas = None
-    A4 = (595.27, 841.89)  # fallback A4 size in points
 
 # --- OpenRouter (OpenAI client) ---
 try:
@@ -46,45 +42,110 @@ except Exception:
     OpenAI = None
     OpenAIAPIError = Exception
 
-# App config
-app = Flask(__name__, static_folder="static", template_folder="templates")
-app.config['JSONIFY_PRETTYPRINT_REGULAR'] = False
+app = Flask(__name__)
 
 UPLOAD_FOLDER = 'uploads'
 ALLOWED_EXTENSIONS = {'pdf', 'docx', 'txt'}
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024
 
-# ====== CONFIGURE YOUR KEYS HERE (via environment) ======
+# ====== CONFIGURE YOUR KEYS HERE ======
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "").strip()
-OPENAI_BASE_URL = os.getenv("OPENAI_BASE_URL", "https://openrouter.ai/api/v1").strip()
+# If you keep credentials in `pri.env`, the loader above will read them. Alternatively,
+# set the environment variable in your OS or rename `pri.env` to `.env`.
 
 openai_client = None
-if OpenAI and OPENAI_API_KEY:
-    try:
-        openai_client = OpenAI(api_key=OPENAI_API_KEY, base_url=OPENAI_BASE_URL)
-    except Exception as e:
-        print(f"OpenAI client init warning: {e}")
-        openai_client = None
-else:
-    if not OpenAI:
-        print("OpenAI library missing.")
-    if not OPENAI_API_KEY:
-        print("OPENAI_API_KEY not set (will skip AI calls).")
+try:
+    if OPENAI_API_KEY and OPENAI_API_KEY != "YOUR_OPENROUTER_API_KEY_HERE" and OpenAI:
+        openai_client = OpenAI(
+            api_key=OPENAI_API_KEY,
+            base_url="https://openrouter.ai/api/v1"
+        )
+except Exception as e:
+    print(f"OpenAI client init warning: {e}")
 
 
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
 
-# ===================== Small utilities & templates =====================
+# ===================== LaTeX TEMPLATES =====================
 
-LATEX_TEMPLATE_BASIC = r"""..."""  # keep original latex strings here
-LATEX_TEMPLATE_AUTOCV = r"""..."""  # keep original latex strings here
+LATEX_TEMPLATE_BASIC = r"""
+\documentclass[10pt, a4paper]{article}
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{geometry}
+\geometry{a4paper, top=1.5cm, bottom=1.5cm, left=1.5cm, right=1.5cm}
+\usepackage{titlesec}
+\usepackage{hyperref}
+\hypersetup{colorlinks=true, urlcolor=blue}
+\usepackage{enumitem}
 
-# To avoid making the snippet enormous, we reuse the originals:
-# (In your implementation keep the full LATEX_TEMPLATE_BASIC and LATEX_TEMPLATE_AUTOCV content)
-# If copying into your file, replace the placeholders above with the full templates from your previous file.
+\pagestyle{empty}
+\setlength{\parindent}{0pt}
+\titleformat{\section}{\large\bfseries}{}{0em}{}[\color{black}\titlerule]
+
+\begin{document}
+\vspace*{0.2cm}
+\begin{center}
+    \textbf{\Large NAME\_PLACEHOLDER}
+    
+    \vspace{0.1cm}
+    \small \href{mailto:EMAIL\_PLACEHOLDER}{EMAIL\_PLACEHOLDER} $|$ PHONE\_PLACEHOLDER $|$ \href{LINKEDIN\_PLACEHOLDER}{LinkedIn}
+    \vspace{0.1cm}
+\end{center}
+
+\section*{Experience}
+EXPERIENCE\_PLACEHOLDER
+
+\section*{Education}
+EDUCATION\_PLACEHOLDER
+
+\section*{Skills}
+SKILLS\_PLACEHOLDER
+
+\end{document}
+"""
+
+LATEX_TEMPLATE_AUTOCV = r"""
+\documentclass[11pt, a4paper]{article}
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{geometry}
+\geometry{a4paper, top=1cm, bottom=1cm, left=2cm, right=2cm}
+\usepackage{titlesec}
+\usepackage{hyperref}
+\hypersetup{colorlinks=true, urlcolor=black, linkcolor=black}
+\usepackage{enumitem}
+\usepackage{fontawesome5}
+
+\pagestyle{empty}
+\setlength{\parindent}{0pt}
+\titleformat{\section}{\Large\bfseries\sffamily\color{black!80}}{}{0em}{}[\color{black}\titlerule]
+
+\begin{document}
+
+\begin{center}
+    {\Huge\bfseries NAME\_PLACEHOLDER}
+    
+    \vspace{0.1cm}
+    \faIcon{envelope} \href{mailto:EMAIL\_PLACEHOLDER}{EMAIL\_PLACEHOLDER} $\bullet$ \faIcon{phone} PHONE\_PLACEHOLDER $\bullet$ \faIcon{linkedin} \href{LINKEDIN\_PLACEHOLDER}{LinkedIn}
+    \vspace{0.2cm}
+\end{center}
+
+\section{Experience}
+EXPERIENCE\_PLACEHOLDER
+
+\section{Education}
+EDUCATION\_PLACEHOLDER
+
+\section{Skills}
+SKILLS\_PLACEHOLDER
+
+\end{document}
+"""
+
 
 def get_template_by_name(template_name: str) -> str:
     templates = {
@@ -95,14 +156,13 @@ def get_template_by_name(template_name: str) -> str:
 
 
 def escape_latex(text: str) -> str:
-    text = str(text or "")
+    text = str(text)
     text = text.replace('&', '\\&').replace('%', '\\%').replace('#', '\\#').replace('_', '\\_')
     text = text.replace('{', '\\{').replace('}', '\\}')
     return text
 
 
 def format_for_latex(data, format_type: str) -> str:
-    # same logic as your original format_for_latex (kept for brevity)
     if format_type == 'experience' and isinstance(data, list):
         out = []
         for job in data:
@@ -141,7 +201,6 @@ def format_for_latex(data, format_type: str) -> str:
     return str(data)
 
 
-# ----------------- Robust retry decorator -----------------
 def retry_api_call(max_retries=3, initial_delay=2):
     def decorator(func):
         @wraps(func)
@@ -154,13 +213,11 @@ def retry_api_call(max_retries=3, initial_delay=2):
                     status_code = getattr(e, 'status_code', None)
                     if not status_code and isinstance(e, requests.exceptions.HTTPError):
                         status_code = e.response.status_code
-                    # retry on 5xx or unknown
-                    if (status_code and 500 <= status_code <= 599) or not status_code:
+                    if status_code and 500 <= status_code <= 599 or not status_code:
                         if attempt < max_retries - 1:
-                            app.logger.warning(f"API error, retrying in {delay}s... ({attempt + 1}/{max_retries})")
+                            print(f"API error, retrying in {delay}s... ({attempt + 1}/{max_retries})")
                             time.sleep(delay)
                             delay *= 2
-                            continue
                         else:
                             raise
                     else:
@@ -169,7 +226,7 @@ def retry_api_call(max_retries=3, initial_delay=2):
     return decorator
 
 
-# ===================== PARSING HELPERS =====================
+# ===================== PARSING =====================
 
 def extract_text_from_docx(filepath):
     if docx is None:
@@ -178,7 +235,6 @@ def extract_text_from_docx(filepath):
         d = docx.Document(filepath)
         return "\n".join(p.text for p in d.paragraphs)
     except Exception:
-        app.logger.exception("Failed to extract docx text")
         return None
 
 
@@ -193,14 +249,12 @@ def extract_text_from_pdf(filepath):
             text += t
         return text
     except Exception:
-        app.logger.exception("Failed to extract pdf text")
         return None
 
 
 @retry_api_call(max_retries=3)
 def call_openai_structuring(raw_text: str) -> str:
-    if not openai_client:
-        raise RuntimeError("OpenAI client not configured (OPENAI_API_KEY missing).")
+    """Use OpenRouter model to parse raw resume text into structured JSON."""
     prompt = (
         "You are an expert resume parser. Analyze the following raw resume text and return "
         "a single JSON object with keys: 'name', 'email', 'phone', 'linkedin', 'education' "
@@ -218,16 +272,10 @@ def call_openai_structuring(raw_text: str) -> str:
         ],
         response_format={"type": "json_object"}
     )
-    # defensive access
-    try:
-        return resp.choices[0].message.content
-    except Exception as e:
-        app.logger.exception("Unexpected OpenAI response shape")
-        raise
+    return resp.choices[0].message.content
 
 
 def parse_resume_content(content, source_type='file', filepath=None):
-    # returns dict either {"structured_data": {...}} or {"error": "..."}
     if not openai_client:
         return {"error": "AI client not configured (OpenRouter key missing)."}
 
@@ -239,12 +287,8 @@ def parse_resume_content(content, source_type='file', filepath=None):
         elif ext == 'docx':
             raw_text = extract_text_from_docx(filepath)
         elif ext == 'txt':
-            try:
-                with open(filepath, 'r', encoding='utf-8') as f:
-                    raw_text = f.read()
-            except Exception:
-                app.logger.exception("Failed to read txt file")
-                raw_text = None
+            with open(filepath, 'r', encoding='utf-8') as f:
+                raw_text = f.read()
     elif source_type == 'manual':
         return content
 
@@ -256,12 +300,11 @@ def parse_resume_content(content, source_type='file', filepath=None):
         structured = json.loads(json_text)
         return {"structured_data": structured}
     except Exception as e:
-        app.logger.exception("LLM structuring failed")
         return {"error": f"LLM structuring failed: {e}"}
 
 
-# ===================== ATS, enhancement, helpers =====================
-# (keep existing ACTION_VERBS, NUMBER_REGEX, compute_ats_score, call_openai_enhancement, etc.)
+# ===================== ATS SCORE =====================
+
 ACTION_VERBS = [
     'led', 'developed', 'designed', 'implemented', 'created', 'improved', 'managed', 'built', 'reduced',
     'increased', 'decreased', 'optimized', 'automated', 'delivered', 'launched', 'achieved', 'supported'
@@ -362,12 +405,18 @@ def compute_ats_score(structured_data, job_description=""):
     }
 
 
+# ===================== LLM ENHANCEMENT + SUGGESTIONS =====================
+
 @retry_api_call(max_retries=3)
 def call_openai_enhancement(structured_data, job_description, ats_feedback) -> str:
-    if not openai_client:
-        raise RuntimeError("OpenAI client not configured (OPENAI_API_KEY missing).")
+    """
+    Ask OpenRouter to:
+      - optimize experience + skills
+      - return explicit improvement_suggestions[]
+    """
     original_json = json.dumps(structured_data, indent=2)
     feedback_text = "; ".join(ats_feedback or [])
+
     user_prompt = (
         "You are an ATS resume optimization expert.\n\n"
         "Given this parsed resume JSON and target job description, do three things:\n"
@@ -376,7 +425,9 @@ def call_openai_enhancement(structured_data, job_description, ats_feedback) -> s
         "   - Include quantified impact (numbers/%, time saved, counts)\n"
         "   - Add or adjust keywords relevant to the job\n"
         "2. Rewrite ONLY 'skills' to group and align with the job description.\n"
-        "3. Produce an 'improvement_suggestions' array (5–10 items), where each item is a short, direct suggestion.\n\n"
+        "3. Produce an 'improvement_suggestions' array (5–10 items), where each item is a short, direct suggestion:\n"
+        "   - Explain WHAT to change (e.g., 'Add 2 quantified bullets under XYZ Internship').\n"
+        "   - Optionally mention WHICH keywords to add.\n\n"
         "Respond ONLY with a JSON object having these keys:\n"
         "  'experience': [...],\n"
         "  'skills': [...],\n"
@@ -394,14 +445,11 @@ def call_openai_enhancement(structured_data, job_description, ats_feedback) -> s
         ],
         response_format={"type": "json_object"}
     )
-    try:
-        return resp.choices[0].message.content
-    except Exception:
-        app.logger.exception("Unexpected OpenAI enhancement response")
-        raise
+    return resp.choices[0].message.content
 
 
 def build_fallback_suggestions(initial_ats, final_ats):
+    """If LLM suggestions fail, give basic heuristic ones."""
     notes = []
     if initial_ats and final_ats and final_ats["score"] != initial_ats["score"]:
         notes.append(
@@ -421,6 +469,7 @@ def build_fallback_suggestions(initial_ats, final_ats):
 
     for key, msg in mapping.items():
         if key in ib and key in fb and fb[key] <= ib[key]:
+            # if didn't improve, still suggest
             notes.append(msg)
 
     if not notes and initial_ats:
@@ -430,25 +479,29 @@ def build_fallback_suggestions(initial_ats, final_ats):
 
 
 def enhance_content_with_ai(structured_data, ats_feedback, job_description):
+    """Use OpenRouter to optimize content + detailed suggestions."""
     if not openai_client:
         return {"error": "OpenRouter not configured.", "enhanced_data": structured_data, "improvement_suggestions": []}
+
     try:
         json_text = call_openai_enhancement(structured_data, job_description, ats_feedback)
         obj = json.loads(json_text)
+
         enhanced = structured_data.copy()
         if "experience" in obj:
             enhanced["experience"] = obj["experience"]
         if "skills" in obj:
             enhanced["skills"] = obj["skills"]
+
         improvement_suggestions = obj.get("improvement_suggestions", [])
         if not isinstance(improvement_suggestions, list):
             improvement_suggestions = []
+
         return {
             "enhanced_data": enhanced,
             "improvement_suggestions": improvement_suggestions,
         }
     except Exception as e:
-        app.logger.exception("Enhancement failed")
         return {
             "error": f"Enhancement failed: {e}",
             "enhanced_data": structured_data,
@@ -456,9 +509,11 @@ def enhance_content_with_ai(structured_data, ats_feedback, job_description):
         }
 
 
-# ===================== LATEX / MARKDOWN / PDF HELPERS (same as before) =====================
+# ===================== LATEX / MARKDOWN / PDF HELPERS =====================
+
 def generate_latex_source(structured_data, template_name):
     tpl = get_template_by_name(template_name)
+
     final_latex = tpl.replace(
         "NAME\\_PLACEHOLDER", escape_latex(structured_data.get("name", "Your Name Here"))
     ).replace(
@@ -476,17 +531,20 @@ def generate_latex_source(structured_data, template_name):
     ).replace(
         "SKILLS\\_PLACEHOLDER", format_for_latex(structured_data.get("skills", []), "skills")
     )
+
     return final_latex
 
 
 def generate_docx_file(structured_data):
     if docx is None:
         return None
+
     document = docx.Document()
     style = document.styles["Normal"]
     font = style.font
     font.name = "Calibri"
     font.size = Pt(11)
+
     name = structured_data.get("name", "Your Name")
     h1 = document.add_heading(name, 0)
     h1.alignment = WD_PARAGRAPH_ALIGNMENT.CENTER
@@ -503,8 +561,42 @@ def generate_docx_file(structured_data):
     p.alignment = WD_PARAGRAPH_ALIGNMENT.CENTER
     document.add_paragraph()
 
-    # ... rest of docx content (same as your original implementation) ...
-    # For brevity keep the same docx generation logic you used previously.
+    # Experience
+    if structured_data.get("experience"):
+        document.add_heading("Experience", level=1)
+        for job in structured_data["experience"]:
+            if isinstance(job, dict):
+                p = document.add_paragraph()
+                r = p.add_run(f"{job.get('title', 'Title')} at {job.get('company', 'Company')}")
+                r.bold = True
+                p.add_run(f"\n{job.get('dates', 'Dates')}")
+                desc = job.get("description", [])
+                if isinstance(desc, list):
+                    for bullet in desc:
+                        document.add_paragraph(bullet, style="List Bullet")
+                document.add_paragraph()
+
+    # Education
+    if structured_data.get("education"):
+        document.add_heading("Education", level=1)
+        for edu in structured_data["education"]:
+            if isinstance(edu, dict):
+                p = document.add_paragraph()
+                r = p.add_run(f"{edu.get('degree', 'Degree')} - {edu.get('institution', 'Institution')}")
+                r.bold = True
+                p.add_run(f"\n{edu.get('dates', 'Dates')}")
+                if "description" in edu:
+                    document.add_paragraph(edu["description"])
+                document.add_paragraph()
+
+    # Skills
+    if structured_data.get("skills"):
+        document.add_heading("Skills", level=1)
+        skills = structured_data["skills"]
+        if isinstance(skills, list):
+            document.add_paragraph(", ".join(skills))
+        else:
+            document.add_paragraph(str(skills))
 
     buf = BytesIO()
     document.save(buf)
@@ -512,359 +604,331 @@ def generate_docx_file(structured_data):
     return buf
 
 
-# ===================== Error handlers & CORS helper =====================
-
-@app.errorhandler(400)
-def bad_request(e):
-    return jsonify({"error": "bad_request", "message": str(e)}), 400
-
-
-@app.errorhandler(404)
-def not_found(e):
-    return jsonify({"error": "not_found", "message": "The requested endpoint was not found."}), 404
-
-
-@app.errorhandler(500)
-def server_error(e):
-    tb = traceback.format_exc()
-    app.logger.error(f"Internal server error: {e}\n{tb}")
-    return jsonify({"error": "internal_server_error", "message": str(e), "trace": tb}), 500
-
-
-@app.after_request
-def add_cors_and_json_headers(response: Response):
-    # Allow cross origin requests during development; adjust origin in production
-    response.headers['Access-Control-Allow-Origin'] = os.getenv("CORS_ALLOW_ORIGIN", "*")
-    response.headers['Access-Control-Allow-Headers'] = 'Content-Type,Authorization'
-    response.headers['Access-Control-Allow-Methods'] = 'GET,POST,OPTIONS'
-    # If returning HTML accidentally, this won't convert it — but our handlers try to always return JSON for APIs
-    return response
-
-
 # ===================== FLASK ROUTES =====================
 
-@app.route("/", methods=["GET"])
+@app.route("/")
 def index():
-    # If you have a static frontend, serve index.html. Otherwise return a simple JSON health response.
-    index_path = os.path.join(app.static_folder or "static", "index.html")
-    if os.path.exists(index_path):
-        try:
-            return app.send_static_file("index.html")
-        except Exception:
-            app.logger.exception("Failed to send static index")
-    return jsonify({"status": "ok", "message": "Resume ATS API running."})
+    return render_template("index.html")
 
 
-# Dual routes: /process and /api/process (helps avoid accidental static HTML fallback on Vercel)
-@app.route("/process", methods=["POST", "OPTIONS"])
-@app.route("/api/process", methods=["POST", "OPTIONS"])
+@app.route("/process", methods=["POST"])
 def process_resume():
-    # handle preflight
-    if request.method == "OPTIONS":
-        return jsonify({"ok": True}), 200
+    job_description = ""
+    skip_ai = False
+    structured_data = None
 
-    try:
-        job_description = ""
-        skip_ai = False
-        structured_data = None
+    content_type = request.headers.get("Content-Type", "")
+    is_file_upload = content_type.startswith("multipart/form-data")
 
-        content_type = request.headers.get("Content-Type", "")
-        is_file_upload = content_type.startswith("multipart/form-data")
+    if is_file_upload:
+        job_description = request.form.get("job_description", "")
+        skip_ai = request.form.get("skip_ai") in ["on", "true"]
 
-        if is_file_upload:
-            job_description = request.form.get("job_description", "")
-            skip_ai = request.form.get("skip_ai") in ["on", "true", "True"]
-            file = request.files.get("file")
-            if file and allowed_file(file.filename):
-                filename = secure_filename(file.filename)
-                os.makedirs(app.config["UPLOAD_FOLDER"], exist_ok=True)
-                filepath = os.path.join(app.config["UPLOAD_FOLDER"], filename)
-                file.save(filepath)
-                parsing_result = parse_resume_content(None, source_type="file", filepath=filepath)
-                try:
-                    os.remove(filepath)
-                except Exception:
-                    app.logger.warning("Failed to remove uploaded file")
-                if "error" in parsing_result:
-                    return jsonify(parsing_result), 500
-                structured_data = parsing_result.get("structured_data", {})
-            else:
-                return jsonify({"error": "File input mode requires a valid PDF/DOCX/TXT file."}), 400
+        file = request.files.get("file")
+        if file and allowed_file(file.filename):
+            filename = secure_filename(file.filename)
+            os.makedirs(app.config["UPLOAD_FOLDER"], exist_ok=True)
+            filepath = os.path.join(app.config["UPLOAD_FOLDER"], filename)
+            file.save(filepath)
+
+            parsing_result = parse_resume_content(None, source_type="file", filepath=filepath)
+            try:
+                os.remove(filepath)
+            except Exception:
+                pass
+
+            if "error" in parsing_result:
+                return jsonify(parsing_result), 500
+
+            structured_data = parsing_result.get("structured_data", {})
         else:
-            payload = request.get_json(silent=True)
-            if not payload:
-                return jsonify({"error": "Invalid request: expected file upload or JSON body."}), 400
-            job_description = payload.get("job_description", "")
-            skip_ai = payload.get("skip_ai", False)
-            manual_data = payload.get("manual_data", {})
-            if manual_data and manual_data.get("name"):
-                structured_data = {
-                    "name": manual_data.get("name"),
-                    "email": manual_data.get("email"),
-                    "phone": manual_data.get("phone"),
-                    "linkedin": manual_data.get("linkedin"),
-                    "summary": manual_data.get("summary", ""),
-                    "education": manual_data.get("education", []),
-                    "experience": manual_data.get("experience", []),
-                    "skills": manual_data.get("skills", []),
-                    "achievements": manual_data.get("achievements", []),
-                    "projects": manual_data.get("projects", []),
-                    "certifications": manual_data.get("certifications", []),
-                }
+            return jsonify({"error": "File input mode requires a valid PDF/DOCX/TXT file."}), 400
+    else:
+        payload = request.get_json(silent=True)
+        if not payload:
+            return jsonify({"error": "Invalid request: expected file upload or JSON body."}), 400
 
-        if not structured_data:
-            return jsonify({"error": "No valid resume data found."}), 400
+        job_description = payload.get("job_description", "")
+        skip_ai = payload.get("skip_ai", False)
+        manual_data = payload.get("manual_data", {})
 
-        if not job_description:
-            job_description = "General Industry Role"
+        if manual_data and manual_data.get("name"):
+            structured_data = {
+                "name": manual_data.get("name"),
+                "email": manual_data.get("email"),
+                "phone": manual_data.get("phone"),
+                "linkedin": manual_data.get("linkedin"),
+                "summary": manual_data.get("summary", ""),
+                "education": manual_data.get("education", []),
+                "experience": manual_data.get("experience", []),
+                "skills": manual_data.get("skills", []),
+                "achievements": manual_data.get("achievements", []),
+                "projects": manual_data.get("projects", []),
+                "certifications": manual_data.get("certifications", []),
+            }
 
-        initial_ats = compute_ats_score(structured_data, job_description)
-        response_payload = {
-            "status": "success",
-            "job_description": job_description,
-            "parsed_data": structured_data,
-            "initial_ats": initial_ats,
-        }
+    if not structured_data:
+        return jsonify({"error": "No valid resume data found."}), 400
 
-        # AI enhancement + suggestions
-        if not skip_ai:
-            enh = enhance_content_with_ai(structured_data, initial_ats.get("feedback", []), job_description)
-            enhanced_data = enh.get("enhanced_data", structured_data)
-            final_ats = compute_ats_score(enhanced_data, job_description)
-            suggestions = enh.get("improvement_suggestions") or build_fallback_suggestions(initial_ats, final_ats)
-            response_payload["enhanced_data"] = enhanced_data
-            response_payload["final_ats"] = final_ats
-            response_payload["message"] = "Resume processed and AI-optimized."
-            response_payload["improvement_suggestions"] = suggestions
-            if "error" in enh:
-                response_payload["ai_log"] = enh["error"]
-        else:
-            response_payload["enhanced_data"] = structured_data
-            response_payload["final_ats"] = initial_ats
-            response_payload["message"] = "Resume processed. AI enhancement skipped."
-            response_payload["improvement_suggestions"] = initial_ats.get("feedback", [])
+    if not job_description:
+        job_description = "General Industry Role"
 
-        return jsonify(response_payload)
-    except Exception as e:
-        app.logger.exception("Error in process_resume")
-        return jsonify({"error": "processing_failed", "message": str(e)}), 500
+    initial_ats = compute_ats_score(structured_data, job_description)
+    response_payload = {
+        "status": "success",
+        "job_description": job_description,
+        "parsed_data": structured_data,
+        "initial_ats": initial_ats,
+    }
+
+    # AI enhancement + suggestions
+    if not skip_ai:
+        enh = enhance_content_with_ai(structured_data, initial_ats.get("feedback", []), job_description)
+        enhanced_data = enh.get("enhanced_data", structured_data)
+        final_ats = compute_ats_score(enhanced_data, job_description)
+
+        # if LLM suggestions missing, build fallback
+        suggestions = enh.get("improvement_suggestions") or build_fallback_suggestions(initial_ats, final_ats)
+
+        response_payload["enhanced_data"] = enhanced_data
+        response_payload["final_ats"] = final_ats
+        response_payload["message"] = "Resume processed and AI-optimized."
+        response_payload["improvement_suggestions"] = suggestions
+
+        if "error" in enh:
+            response_payload["ai_log"] = enh["error"]
+    else:
+        response_payload["enhanced_data"] = structured_data
+        response_payload["final_ats"] = initial_ats
+        response_payload["message"] = "Resume processed. AI enhancement skipped."
+        response_payload["improvement_suggestions"] = initial_ats.get("feedback", [])
+
+    return jsonify(response_payload)
 
 
-# Keep the other endpoints, but with both / and /api prefixes to avoid accidental HTML returns
 @app.route("/generate_resume_text", methods=["POST"])
-@app.route("/api/generate_resume_text", methods=["POST"])
 def generate_resume_text():
-    try:
-        data = request.get_json(force=True)
-        structured_data = data.get("structured_data")
-        template_name = data.get("template_name", "Modern ATS (Basic)")
-        if not structured_data:
-            return jsonify({"error": "No structured data provided."}), 400
-        latex_src = generate_latex_source(structured_data, template_name)
-        resp = make_response(latex_src)
-        resp.headers["Content-Type"] = "text/plain; charset=utf-8"
-        return resp
-    except Exception:
-        app.logger.exception("generate_resume_text failed")
-        return jsonify({"error": "generate_failed"}), 500
+    data = request.get_json()
+    structured_data = data.get("structured_data")
+    template_name = data.get("template_name", "Modern ATS (Basic)")
+
+    if not structured_data:
+        return jsonify({"error": "No structured data provided."}), 400
+
+    latex_src = generate_latex_source(structured_data, template_name)
+    resp = make_response(latex_src)
+    resp.headers["Content-Type"] = "text/plain; charset=utf-8"
+    return resp
 
 
 @app.route("/generate_resume", methods=["POST"])
-@app.route("/api/generate_resume", methods=["POST"])
 def generate_resume():
-    try:
-        data = request.get_json(force=True)
-        structured_data = data.get("structured_data")
-        template_name = data.get("template_name", "Modern ATS (Basic)")
-        if not structured_data:
-            return jsonify({"error": "No structured data provided."}), 400
-        latex_src = generate_latex_source(structured_data, template_name)
-        buf = BytesIO(latex_src.encode("utf-8"))
-        buf.seek(0)
-        return send_file(
-            buf,
-            as_attachment=True,
-            download_name="ats_optimized_resume.tex",
-            mimetype="application/x-tex",
-        )
-    except Exception:
-        app.logger.exception("generate_resume failed")
-        return jsonify({"error": "generate_failed"}), 500
+    data = request.get_json()
+    structured_data = data.get("structured_data")
+    template_name = data.get("template_name", "Modern ATS (Basic)")
+
+    if not structured_data:
+        return jsonify({"error": "No structured data provided."}), 400
+
+    latex_src = generate_latex_source(structured_data, template_name)
+    buf = BytesIO(latex_src.encode("utf-8"))
+    buf.seek(0)
+    return send_file(
+        buf,
+        as_attachment=True,
+        download_name="ats_optimized_resume.tex",
+        mimetype="application/x-tex",
+    )
 
 
 @app.route("/generate_markdown", methods=["POST"])
-@app.route("/api/generate_markdown", methods=["POST"])
 def generate_markdown():
-    try:
-        data = request.get_json(force=True)
-        structured_data = data.get("structured_data")
-        if not structured_data:
-            return jsonify({"error": "No structured data provided."}), 400
-        md = f"# {structured_data.get('name', 'Your Name Here')}\n\n"
-        md += f"**Contact:** {structured_data.get('email', 'N/A')} | {structured_data.get('phone', 'N/A')} | [LinkedIn]({structured_data.get('linkedin', '#')})\n\n"
-        md += "---\n\n"
-        exp = structured_data.get("experience", [])
-        md += "## Experience\n\n"
-        for job in exp:
-            if isinstance(job, dict):
-                md += f"### {job.get('title', 'Job Title')} @ {job.get('company', 'Company')}\n"
-                md += f"*{job.get('dates', 'Dates')}*\n"
-                desc = job.get("description", [])
-                if isinstance(desc, list):
-                    for bullet in desc:
-                        md += f"* {bullet}\n"
-                md += "\n"
-            elif isinstance(job, str):
-                md += f"* {job}\n"
-        md += "\n"
-        edu = structured_data.get("education", [])
-        md += "## Education\n\n"
-        for e in edu:
-            if isinstance(e, dict):
-                md += f"### {e.get('degree', 'Degree')} - {e.get('institution', 'Institution')}\n"
-                md += f"*{e.get('dates', 'Dates')}*\n"
-                if "description" in e:
-                    md += f"{e['description']}\n"
-                md += "\n"
-            elif isinstance(e, str):
-                md += f"* {e}\n"
-        md += "\n"
-        md += "## Skills\n\n"
-        skills = structured_data.get("skills", [])
-        md += ", ".join(skills) + "\n\n"
-        buf = BytesIO(md.encode("utf-8"))
-        buf.seek(0)
-        return send_file(
-            buf,
-            as_attachment=True,
-            download_name="ats_optimized_resume.md",
-            mimetype="text/markdown",
-        )
-    except Exception:
-        app.logger.exception("generate_markdown failed")
-        return jsonify({"error": "generate_failed"}), 500
+    data = request.get_json()
+    structured_data = data.get("structured_data")
+
+    if not structured_data:
+        return jsonify({"error": "No structured data provided."}), 400
+
+    md = f"# {structured_data.get('name', 'Your Name Here')}\n\n"
+    md += f"**Contact:** {structured_data.get('email', 'N/A')} | {structured_data.get('phone', 'N/A')} | [LinkedIn]({structured_data.get('linkedin', '#')})\n\n"
+    md += "---\n\n"
+
+    # Experience
+    md += "## Experience\n\n"
+    exp = structured_data.get("experience", [])
+    for job in exp:
+        if isinstance(job, dict):
+            md += f"### {job.get('title', 'Job Title')} @ {job.get('company', 'Company')}\n"
+            md += f"*{job.get('dates', 'Dates')}*\n"
+            desc = job.get("description", [])
+            if isinstance(desc, list):
+                for bullet in desc:
+                    md += f"* {bullet}\n"
+            md += "\n"
+        elif isinstance(job, str):
+            md += f"* {job}\n"
+    md += "\n"
+
+    # Education
+    md += "## Education\n\n"
+    edu = structured_data.get("education", [])
+    for e in edu:
+        if isinstance(e, dict):
+            md += f"### {e.get('degree', 'Degree')} - {e.get('institution', 'Institution')}\n"
+            md += f"*{e.get('dates', 'Dates')}*\n"
+            if "description" in e:
+                md += f"{e['description']}\n"
+            md += "\n"
+        elif isinstance(e, str):
+            md += f"* {e}\n"
+    md += "\n"
+
+    # Skills
+    md += "## Skills\n\n"
+    skills = structured_data.get("skills", [])
+    md += ", ".join(skills) + "\n\n"
+
+    buf = BytesIO(md.encode("utf-8"))
+    buf.seek(0)
+    return send_file(
+        buf,
+        as_attachment=True,
+        download_name="ats_optimized_resume.md",
+        mimetype="text/markdown",
+    )
 
 
 @app.route("/generate_resume_pdf", methods=["POST"])
-@app.route("/api/generate_resume_pdf", methods=["POST"])
 def generate_resume_pdf():
+    """Generate a simple PDF from structured resume data (used by 'Generate PDF' button)."""
     try:
-        if canvas is None:
-            return jsonify({"error": "reportlab not installed on server."}), 500
-        data = request.get_json(force=True)
-        structured_data = data.get("structured_data")
-        if not structured_data:
-            return jsonify({"error": "No structured data provided."}), 400
-        buffer = BytesIO()
-        c = canvas.Canvas(buffer, pagesize=A4)
-        width, height = A4
-        y = height - 50
-        name = structured_data.get("name", "Your Name")
-        email = structured_data.get("email", "")
-        phone = structured_data.get("phone", "")
-        linkedin = structured_data.get("linkedin", "")
-        contact_line = " | ".join(x for x in [email, phone, linkedin] if x)
-        c.setFont("Helvetica-Bold", 16)
-        c.drawString(50, y, name)
-        y -= 20
+        from reportlab.pdfgen import canvas  # ensure import
+    except ImportError:
+        return jsonify({"error": "reportlab not installed on server."}), 500
+
+    data = request.get_json()
+    structured_data = data.get("structured_data")
+
+    if not structured_data:
+        return jsonify({"error": "No structured data provided."}), 400
+
+    buffer = BytesIO()
+    c = canvas.Canvas(buffer, pagesize=A4)
+    width, height = A4
+    y = height - 50
+
+    name = structured_data.get("name", "Your Name")
+    email = structured_data.get("email", "")
+    phone = structured_data.get("phone", "")
+    linkedin = structured_data.get("linkedin", "")
+    contact_line = " | ".join(x for x in [email, phone, linkedin] if x)
+
+    c.setFont("Helvetica-Bold", 16)
+    c.drawString(50, y, name)
+    y -= 20
+
+    c.setFont("Helvetica", 10)
+    if contact_line:
+        c.drawString(50, y, contact_line)
+        y -= 30
+
+    def heading(t):
+        nonlocal y
+        c.setFont("Helvetica-Bold", 12)
+        c.drawString(50, y, t)
+        y -= 18
         c.setFont("Helvetica", 10)
-        if contact_line:
-            c.drawString(50, y, contact_line)
-            y -= 30
-        def heading(t):
-            nonlocal y
-            c.setFont("Helvetica-Bold", 12)
-            c.drawString(50, y, t)
-            y -= 18
-            c.setFont("Helvetica", 10)
-        def wrap(text, indent=0):
-            nonlocal y
-            if not text:
-                return
-            max_chars = 95 - indent
-            line = text
-            while len(line) > max_chars:
-                c.drawString(50 + indent * 4, y, line[:max_chars])
-                y -= 14
-                line = line[max_chars:]
-            c.drawString(50 + indent * 4, y, line)
+
+    def wrap(text, indent=0):
+        nonlocal y
+        if not text:
+            return
+        max_chars = 95 - indent
+        line = text
+        while len(line) > max_chars:
+            c.drawString(50 + indent * 4, y, line[:max_chars])
             y -= 14
-        summary = structured_data.get("summary", "")
-        if summary:
-            heading("Profile Summary")
-            for line in summary.split("\n"):
-                if line.strip():
-                    wrap(line)
-            y -= 6
-        exp = structured_data.get("experience", [])
-        if exp:
-            heading("Experience")
-            for job in exp:
-                if isinstance(job, dict):
-                    header = f"{job.get('title', 'Job Title')} @ {job.get('company', 'Company')} {job.get('dates', '')}"
-                    wrap(header)
-                    desc = job.get("description", [])
-                    if isinstance(desc, list):
-                        for bullet in desc:
-                            wrap("• " + bullet, indent=2)
-                    y -= 4
-                elif isinstance(job, str):
-                    wrap("• " + job)
-            y -= 6
-        edu = structured_data.get("education", [])
-        if edu:
-            heading("Education")
-            for e in edu:
-                if isinstance(e, dict):
-                    header = f"{e.get('degree', 'Degree')} - {e.get('institution', 'Institution')} {e.get('dates', '')}"
-                    wrap(header)
-                    if e.get("description"):
-                        wrap(e["description"], indent=2)
-                elif isinstance(e, str):
-                    wrap("• " + e)
-            y -= 6
-        skills = structured_data.get("skills", [])
-        if skills:
-            heading("Skills")
-            wrap(", ".join(skills))
-        c.showPage()
-        c.save()
-        buffer.seek(0)
-        return send_file(
-            buffer,
-            as_attachment=True,
-            download_name="resume.pdf",
-            mimetype="application/pdf",
-        )
-    except Exception:
-        app.logger.exception("generate_resume_pdf failed")
-        return jsonify({"error": "generate_failed"}), 500
+            line = line[max_chars:]
+        c.drawString(50 + indent * 4, y, line)
+        y -= 14
+
+    # Summary
+    summary = structured_data.get("summary", "")
+    if summary:
+        heading("Profile Summary")
+        for line in summary.split("\n"):
+            if line.strip():
+                wrap(line)
+        y -= 6
+
+    # Experience
+    exp = structured_data.get("experience", [])
+    if exp:
+        heading("Experience")
+        for job in exp:
+            if isinstance(job, dict):
+                header = f"{job.get('title', 'Job Title')} @ {job.get('company', 'Company')} {job.get('dates', '')}"
+                wrap(header)
+                desc = job.get("description", [])
+                if isinstance(desc, list):
+                    for bullet in desc:
+                        wrap("• " + bullet, indent=2)
+                y -= 4
+            elif isinstance(job, str):
+                wrap("• " + job)
+        y -= 6
+
+    # Education
+    edu = structured_data.get("education", [])
+    if edu:
+        heading("Education")
+        for e in edu:
+            if isinstance(e, dict):
+                header = f"{e.get('degree', 'Degree')} - {e.get('institution', 'Institution')} {e.get('dates', '')}"
+                wrap(header)
+                if e.get("description"):
+                    wrap(e["description"], indent=2)
+            elif isinstance(e, str):
+                wrap("• " + e)
+        y -= 6
+
+    # Skills
+    skills = structured_data.get("skills", [])
+    if skills:
+        heading("Skills")
+        wrap(", ".join(skills))
+
+    c.showPage()
+    c.save()
+    buffer.seek(0)
+
+    return send_file(
+        buffer,
+        as_attachment=True,
+        download_name="resume.pdf",
+        mimetype="application/pdf",
+    )
 
 
 @app.route("/generate_docx", methods=["POST"])
-@app.route("/api/generate_docx", methods=["POST"])
 def generate_docx():
-    try:
-        data = request.get_json(force=True)
-        structured_data = data.get("structured_data")
-        if not structured_data:
-            return jsonify({"error": "No structured data provided."}), 400
-        doc_buf = generate_docx_file(structured_data)
-        if not doc_buf:
-            return jsonify({"error": "DOCX generation failed (python-docx missing?)."}), 500
-        return send_file(
-            doc_buf,
-            as_attachment=True,
-            download_name="resume.docx",
-            mimetype="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-        )
-    except Exception:
-        app.logger.exception("generate_docx failed")
-        return jsonify({"error": "generate_failed"}), 500
+    data = request.get_json()
+    structured_data = data.get("structured_data")
+    if not structured_data:
+        return jsonify({"error": "No structured data provided."}), 400
+
+    doc_buf = generate_docx_file(structured_data)
+    if not doc_buf:
+        return jsonify({"error": "DOCX generation failed (python-docx missing?)."}), 500
+
+    return send_file(
+        doc_buf,
+        as_attachment=True,
+        download_name="resume.docx",
+        mimetype="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    )
 
 
-# ===================== Run app (only when executed directly) =====================
 if __name__ == "__main__":
     os.makedirs(UPLOAD_FOLDER, exist_ok=True)
-    port = int(os.getenv("PORT", 5000))
-    app.run(debug=True, host="0.0.0.0", port=port)
+    app.run(debug=True, host="0.0.0.0", port=int(os.getenv("PORT", 5000)))
