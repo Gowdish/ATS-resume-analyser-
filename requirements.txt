@@ -6,3 +6,4 @@ python-docx
 pypdf
 reportlab
 requests
+werkzeug
