@@ -10,12 +10,9 @@ from io import BytesIO
 from flask import Flask, request, jsonify, render_template, send_file, make_response
 from werkzeug.utils import secure_filename
 
-# Load .env (or `pri.env` if present). This ensures environment keys in the repo are loaded.
-env_path = os.path.join(os.path.dirname(__file__), 'pri.env')
-if os.path.exists(env_path):
-    load_dotenv(env_path)
-else:
-    load_dotenv()  # fallback to default .env lookup
+# Load .env (local development)
+load_dotenv()
+
 # --- Local parsing libs ---
 try:
     import docx
@@ -23,7 +20,6 @@ try:
     from docx.enum.text import WD_PARAGRAPH_ALIGNMENT
     from pypdf import PdfReader
 except ImportError:
-    print("WARNING: install parsing libs: pip install python-docx pypdf")
     docx = None
     PdfReader = None
 
@@ -32,30 +28,30 @@ try:
     from reportlab.pdfgen import canvas
     from reportlab.lib.pagesizes import A4
 except ImportError:
-    print("WARNING: install reportlab: pip install reportlab")
+    pass
 
 # --- OpenRouter (OpenAI client) ---
 try:
     from openai import OpenAI, APIError as OpenAIAPIError
 except Exception:
-    print("WARNING: OpenAI client not installed. pip install openai")
     OpenAI = None
     OpenAIAPIError = Exception
 
-app = Flask(__name__)
+app = Flask(__name__, template_folder='templates', static_folder='static')
 
-UPLOAD_FOLDER = 'uploads'
+# ====== VERCEL CONFIGURATION ======
+# Vercel only allows writing to /tmp directory
+UPLOAD_FOLDER = '/tmp'
 ALLOWED_EXTENSIONS = {'pdf', 'docx', 'txt'}
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024
 
-# ====== CONFIGURE YOUR KEYS HERE ======
+# ====== API KEYS ======
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "").strip()
-# If you keep credentials in `pri.env`, the loader above will read them. Alternatively,
-# set the environment variable in your OS or rename `pri.env` to `.env`.
 
 openai_client = None
 try:
+    # We check for a generic placeholder to avoid init errors
     if OPENAI_API_KEY and OPENAI_API_KEY != "YOUR_OPENROUTER_API_KEY_HERE" and OpenAI:
         openai_client = OpenAI(
             api_key=OPENAI_API_KEY,
@@ -89,21 +85,21 @@ LATEX_TEMPLATE_BASIC = r"""
 \begin{document}
 \vspace*{0.2cm}
 \begin{center}
-    \textbf{\Large NAME\_PLACEHOLDER}
+    \textbf{\Large NAME_PLACEHOLDER}
     
     \vspace{0.1cm}
-    \small \href{mailto:EMAIL\_PLACEHOLDER}{EMAIL\_PLACEHOLDER} $|$ PHONE\_PLACEHOLDER $|$ \href{LINKEDIN\_PLACEHOLDER}{LinkedIn}
+    \small \href{mailto:EMAIL_PLACEHOLDER}{EMAIL_PLACEHOLDER} $|$ PHONE_PLACEHOLDER $|$ \href{LINKEDIN_PLACEHOLDER}{LinkedIn}
     \vspace{0.1cm}
 \end{center}
 
 \section*{Experience}
-EXPERIENCE\_PLACEHOLDER
+EXPERIENCE_PLACEHOLDER
 
 \section*{Education}
-EDUCATION\_PLACEHOLDER
+EDUCATION_PLACEHOLDER
 
 \section*{Skills}
-SKILLS\_PLACEHOLDER
+SKILLS_PLACEHOLDER
 
 \end{document}
 """
@@ -127,21 +123,21 @@ LATEX_TEMPLATE_AUTOCV = r"""
 \begin{document}
 
 \begin{center}
-    {\Huge\bfseries NAME\_PLACEHOLDER}
+    {\Huge\bfseries NAME_PLACEHOLDER}
     
     \vspace{0.1cm}
-    \faIcon{envelope} \href{mailto:EMAIL\_PLACEHOLDER}{EMAIL\_PLACEHOLDER} $\bullet$ \faIcon{phone} PHONE\_PLACEHOLDER $\bullet$ \faIcon{linkedin} \href{LINKEDIN\_PLACEHOLDER}{LinkedIn}
+    \faIcon{envelope} \href{mailto:EMAIL_PLACEHOLDER}{EMAIL_PLACEHOLDER} $\bullet$ \faIcon{phone} PHONE_PLACEHOLDER $\bullet$ \faIcon{linkedin} \href{LINKEDIN_PLACEHOLDER}{LinkedIn}
     \vspace{0.2cm}
 \end{center}
 
 \section{Experience}
-EXPERIENCE\_PLACEHOLDER
+EXPERIENCE_PLACEHOLDER
 
 \section{Education}
-EDUCATION\_PLACEHOLDER
+EDUCATION_PLACEHOLDER
 
 \section{Skills}
-SKILLS\_PLACEHOLDER
+SKILLS_PLACEHOLDER
 
 \end{document}
 """
@@ -210,10 +206,12 @@ def retry_api_call(max_retries=3, initial_delay=2):
                 try:
                     return func(*args, **kwargs)
                 except (OpenAIAPIError, requests.exceptions.RequestException) as e:
+                    # Retry on 5xx or network errors
                     status_code = getattr(e, 'status_code', None)
                     if not status_code and isinstance(e, requests.exceptions.HTTPError):
                         status_code = e.response.status_code
-                    if status_code and 500 <= status_code <= 599 or not status_code:
+                    
+                    if (status_code and 500 <= status_code <= 599) or not status_code:
                         if attempt < max_retries - 1:
                             print(f"API error, retrying in {delay}s... ({attempt + 1}/{max_retries})")
                             time.sleep(delay)
@@ -515,21 +513,21 @@ def generate_latex_source(structured_data, template_name):
     tpl = get_template_by_name(template_name)
 
     final_latex = tpl.replace(
-        "NAME\\_PLACEHOLDER", escape_latex(structured_data.get("name", "Your Name Here"))
+        "NAME_PLACEHOLDER", escape_latex(structured_data.get("name", "Your Name Here"))
     ).replace(
-        "EMAIL\\_PLACEHOLDER", structured_data.get("email", "your.email@example.com")
+        "EMAIL_PLACEHOLDER", structured_data.get("email", "your.email@example.com")
     ).replace(
-        "PHONE\\_PLACEHOLDER", escape_latex(structured_data.get("phone", "Phone Number"))
+        "PHONE_PLACEHOLDER", escape_latex(structured_data.get("phone", "Phone Number"))
     ).replace(
-        "LINKEDIN\\_PLACEHOLDER", structured_data.get("linkedin", "https://linkedin.com/in/you")
+        "LINKEDIN_PLACEHOLDER", structured_data.get("linkedin", "https://linkedin.com/in/you")
     )
 
     final_latex = final_latex.replace(
-        "EXPERIENCE\\_PLACEHOLDER", format_for_latex(structured_data.get("experience", []), "experience")
+        "EXPERIENCE_PLACEHOLDER", format_for_latex(structured_data.get("experience", []), "experience")
     ).replace(
-        "EDUCATION\\_PLACEHOLDER", format_for_latex(structured_data.get("education", []), "education")
+        "EDUCATION_PLACEHOLDER", format_for_latex(structured_data.get("education", []), "education")
     ).replace(
-        "SKILLS\\_PLACEHOLDER", format_for_latex(structured_data.get("skills", []), "skills")
+        "SKILLS_PLACEHOLDER", format_for_latex(structured_data.get("skills", []), "skills")
     )
 
     return final_latex
@@ -627,11 +625,14 @@ def process_resume():
         file = request.files.get("file")
         if file and allowed_file(file.filename):
             filename = secure_filename(file.filename)
-            os.makedirs(app.config["UPLOAD_FOLDER"], exist_ok=True)
+            
+            # --- VERCEL FIX: Use /tmp ---
             filepath = os.path.join(app.config["UPLOAD_FOLDER"], filename)
             file.save(filepath)
 
             parsing_result = parse_resume_content(None, source_type="file", filepath=filepath)
+            
+            # Clean up temp file
             try:
                 os.remove(filepath)
             except Exception:
@@ -644,6 +645,7 @@ def process_resume():
         else:
             return jsonify({"error": "File input mode requires a valid PDF/DOCX/TXT file."}), 400
     else:
+        # Manual Mode
         payload = request.get_json(silent=True)
         if not payload:
             return jsonify({"error": "Invalid request: expected file upload or JSON body."}), 400
@@ -687,7 +689,6 @@ def process_resume():
         enhanced_data = enh.get("enhanced_data", structured_data)
         final_ats = compute_ats_score(enhanced_data, job_description)
 
-        # if LLM suggestions missing, build fallback
         suggestions = enh.get("improvement_suggestions") or build_fallback_suggestions(initial_ats, final_ats)
 
         response_payload["enhanced_data"] = enhanced_data
@@ -786,7 +787,10 @@ def generate_markdown():
     # Skills
     md += "## Skills\n\n"
     skills = structured_data.get("skills", [])
-    md += ", ".join(skills) + "\n\n"
+    if isinstance(skills, list):
+        md += ", ".join(skills) + "\n\n"
+    else:
+        md += str(skills) + "\n\n"
 
     buf = BytesIO(md.encode("utf-8"))
     buf.seek(0)
@@ -800,7 +804,7 @@ def generate_markdown():
 
 @app.route("/generate_resume_pdf", methods=["POST"])
 def generate_resume_pdf():
-    """Generate a simple PDF from structured resume data (used by 'Generate PDF' button)."""
+    """Generate a simple PDF from structured resume data (ReportLab)."""
     try:
         from reportlab.pdfgen import canvas  # ensure import
     except ImportError:
@@ -896,7 +900,10 @@ def generate_resume_pdf():
     skills = structured_data.get("skills", [])
     if skills:
         heading("Skills")
-        wrap(", ".join(skills))
+        if isinstance(skills, list):
+            wrap(", ".join(skills))
+        else:
+            wrap(str(skills))
 
     c.showPage()
     c.save()
